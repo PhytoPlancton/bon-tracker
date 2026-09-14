@@ -44,7 +44,7 @@ echo.
 
 echo  [4/4] Configuration.
 echo.
-docker compose run --rm --no-deps --user root -v "%cd%:/host" web node scripts/setup.mjs /host/.env
+docker compose run --rm --no-deps --user root -v "%cd%:/host" web node scripts/setup.mjs /host
 if errorlevel 1 (
   echo.
   echo  Configuration interrompue. Relance ce script pour reprendre.
@@ -53,7 +53,7 @@ if errorlevel 1 (
 )
 
 echo  Demarrage des services...
-docker compose up -d
+docker compose up -d --remove-orphans
 if errorlevel 1 (
   echo.
   echo  Le demarrage a echoue. Le detail est au-dessus.

@@ -29,6 +29,17 @@ Format : [date] | ce qui a mal tourné | règle pour l'éviter
   machine cible » manquait. | Écrire la documentation pour la machine où elle
   sera exécutée, pas pour celle où le code a été écrit.
 
+- [2026-09-15] | Le hash bcrypt passé par `.env` arrivait amputé dans le
+  container : Docker Compose interprète « $ » dans ce fichier, et prenait
+  « $12$zikBy7QA1 » pour une variable à remplacer par du vide. La connexion
+  échouait avec le bon mot de passe. | Aucune valeur contenant « $ » ne doit
+  transiter par `.env` : les secrets passent par un fichier dédié référencé
+  en `env_file`, que Compose transmet sans l'interpréter.
+- [2026-09-15] | `const ENV_HEADER` déclaré après son utilisation au niveau
+  racine du module : ReferenceError à l'exécution, que `node --check` ne voit
+  pas. | Une constante utilisée par du code de premier niveau se déclare avant
+  lui ; seules les fonctions remontent.
+
 ## Règles permanentes du projet
 - Un seul client MongoDB, `maxPoolSize` bas : le quota de 500 connexions est
   partagé entre plusieurs applications.

@@ -1,12 +1,22 @@
 #!/usr/bin/env node
 /**
  * Mise en service guidée : génère les secrets manquants, demande les comptes,
- * et écrit le fichier .env. Relançable sans risque — les valeurs déjà
+ * et écrit la configuration. Relançable sans risque — les valeurs déjà
  * renseignées sont conservées, seules les cases vides sont demandées.
  *
- * Appelé par setup.cmd avec le chemin du .env en argument.
+ * Deux fichiers sont produits, pour une raison précise :
+ *   .env         ce dont Docker Compose a besoin pour construire le
+ *                docker-compose.yml. Compose y interprète « $ », donc aucune
+ *                valeur de ce fichier ne doit en contenir.
+ *   secrets.env  clés et mots de passe, transmis littéralement aux containers
+ *                par `env_file`. Un hash bcrypt (« $2a$12$… ») placé dans .env
+ *                serait amputé par Compose, qui prendrait « $12 » pour une
+ *                variable à remplacer.
+ *
+ * Appelé par setup.cmd avec le dossier du projet en argument.
  */
 import { readFile, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { stdin, stdout } from 'node:process';
@@ -15,9 +25,33 @@ const CTRL_C = String.fromCharCode(3);
 const BACKSPACE = String.fromCharCode(127);
 
 const bcrypt = loadBcrypt();
-const envPath = process.argv[2] || '.env';
+const projectDir = process.argv[2] || '.';
+const envPath = join(projectDir, '.env');
+const secretsPath = join(projectDir, 'secrets.env');
 
-let lines = (await readFile(envPath, 'utf8').catch(() => '')).split('\n');
+/** Clés destinées au .env ; toutes les autres vont dans secrets.env. */
+const ENV_KEYS = [
+  'MONGO_USER',
+  'MONGO_PASSWORD',
+  'MONGO_DB',
+  'TUNNEL_TOKEN',
+  'COMPOSE_PROFILES',
+  'CRON_SCHEDULE',
+];
+
+const ENV_HEADER = `# Réglages de Docker Compose — écrit par setup.cmd, ne pas versionner.
+# Aucune valeur ici ne doit contenir de « $ » : Compose y verrait une variable
+# à remplacer. Les clés et mots de passe sont dans secrets.env.`;
+
+const SECRETS_HEADER = `# Clés et mots de passe — écrit par setup.cmd, ne pas versionner.
+# Transmis tels quels aux containers : Compose n'interprète pas ce fichier.`;
+
+// Les deux fichiers sont relus ensemble : une installation antérieure a pu
+// tout ranger dans .env, on récupère alors ses valeurs sans rien redemander.
+const values = new Map([
+  ...parse(await readFile(envPath, 'utf8').catch(() => '')),
+  ...parse(await readFile(secretsPath, 'utf8').catch(() => '')),
+]);
 
 const input = { buffer: '', pending: null, ended: false };
 stdin.on('data', onChunk);
@@ -95,8 +129,8 @@ if (!read('TUNNEL_TOKEN')) {
   console.log('  Networks → Tunnels → Create a tunnel → Cloudflared');
   console.log('  puis Public Hostname : bontracker.nmt.ovh → HTTP → web:3000');
   const token = (await ask('\n  Token du tunnel (vide pour plus tard) : ')).trim();
+  set('TUNNEL_TOKEN', token);
   if (token) {
-    set('TUNNEL_TOKEN', token);
     console.log('✓ Tunnel configuré\n');
   } else {
     console.log('… ignoré. L’app restera accessible sur http://localhost:3000\n');
@@ -105,33 +139,57 @@ if (!read('TUNNEL_TOKEN')) {
   console.log('✓ Tunnel déjà configuré\n');
 }
 
-await writeFile(envPath, lines.join('\n'), 'utf8');
+// Le service du tunnel ne démarre que lorsqu'il a de quoi se connecter.
+set('COMPOSE_PROFILES', read('TUNNEL_TOKEN') ? 'tunnel' : '');
+
+await writeFile(envPath, render(ENV_HEADER, (key) => ENV_KEYS.includes(key)), 'utf8');
+await writeFile(secretsPath, render(SECRETS_HEADER, (key) => !ENV_KEYS.includes(key)), 'utf8');
 
 console.log('─────────────────────────────────────────');
-console.log('  Configuration enregistrée dans .env');
+console.log('  Configuration enregistrée');
+console.log('    .env         réglages de Docker Compose');
+console.log('    secrets.env  clés et mots de passe');
 console.log('─────────────────────────────────────────\n');
 
 stdin.off('data', onChunk);
 stdin.pause();
 
-/**
- * Lit une valeur non vide du .env en mémoire. Un éventuel commentaire de fin
- * de ligne est écarté : sans cela, « CLE=   # explication » passerait pour une
- * valeur déjà renseignée.
- */
 function read(key) {
-  const line = lines.find((entry) => entry.startsWith(`${key}=`));
-  if (!line) return null;
-  const value = line.slice(key.length + 1).split(' #')[0].trim();
-  return value || null;
+  return values.get(key) || null;
 }
 
-/** Remplace la ligne si la clé existe, l'ajoute sinon. */
 function set(key, value) {
-  const index = lines.findIndex((entry) => entry.startsWith(`${key}=`));
-  if (index === -1) lines.push(`${key}=${value}`);
-  else lines[index] = `${key}=${value}`;
+  values.set(key, value);
 }
+
+/**
+ * Lit un fichier de configuration. Un éventuel commentaire de fin de ligne est
+ * écarté : sans cela, « CLE=   # explication » passerait pour une valeur déjà
+ * renseignée.
+ */
+function parse(content) {
+  return content
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith('#') && line.includes('='))
+    .map((line) => {
+      const index = line.indexOf('=');
+      const key = line.slice(0, index).trim();
+      const value = line.slice(index + 1).split(' #')[0].trim();
+      return [key, value];
+    })
+    .filter(([key, value]) => key && value);
+}
+
+function render(header, belongs) {
+  const body = [...values.entries()]
+    .filter(([key]) => belongs(key))
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, value]) => `${key}=${value}`)
+    .join('\n');
+  return `${header}\n${body}\n`;
+}
+
 
 /**
  * Demande une adresse jusqu'à ce qu'elle en soit une. Sans ce garde-fou, une
