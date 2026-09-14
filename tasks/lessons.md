@@ -29,12 +29,19 @@ Format : [date] | ce qui a mal tourné | règle pour l'éviter
   machine cible » manquait. | Écrire la documentation pour la machine où elle
   sera exécutée, pas pour celle où le code a été écrit.
 
-- [2026-09-15] | Le hash bcrypt passé par `.env` arrivait amputé dans le
-  container : Docker Compose interprète « $ » dans ce fichier, et prenait
-  « $12$zikBy7QA1 » pour une variable à remplacer par du vide. La connexion
-  échouait avec le bon mot de passe. | Aucune valeur contenant « $ » ne doit
-  transiter par `.env` : les secrets passent par un fichier dédié référencé
-  en `env_file`, que Compose transmet sans l'interpréter.
+- [2026-09-15] | Le hash bcrypt arrivait amputé dans le container : Docker
+  Compose interprète « $ » et prenait « $12$zikBy7QA1 » pour une variable à
+  remplacer par du vide. Déplacer les secrets vers un fichier `env_file` n'y a
+  rien changé — Compose interprète aussi ce fichier, ce que l'avertissement
+  persistant a fini par prouver. | Aucune valeur contenant « $ » ne doit
+  transiter par un fichier d'environnement lu par Compose, quel qu'il soit :
+  les secrets concernés sont encodés en base64, qui n'emploie aucun caractère
+  interprété, et décodés à la lecture.
+- [2026-09-15] | Deux correctifs successifs posés sur la même cause sans
+  vérifier que le premier avait produit l'effet attendu : l'avertissement
+  « variable is not set » était resté visible entre les deux, et disait déjà
+  que le problème subsistait. | Lire les avertissements qui persistent après
+  un correctif : ils décrivent l'état réel, pas l'état espéré.
 - [2026-09-15] | `const ENV_HEADER` déclaré après son utilisation au niveau
   racine du module : ReferenceError à l'exécution, que `node --check` ne voit
   pas. | Une constante utilisée par du code de premier niveau se déclare avant

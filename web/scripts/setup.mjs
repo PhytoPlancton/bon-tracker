@@ -64,6 +64,17 @@ console.log('\n─────────────────────�
 console.log('  Bon Tracker — mise en service');
 console.log('─────────────────────────────────────────\n');
 
+// Une installation antérieure a pu écrire ces secrets en clair. Le fichier sur
+// disque est intact — c'est Compose qui les abîmait en les lisant — donc les
+// réencoder suffit, sans rien redemander.
+for (const key of ['ADMIN_PASSWORD_HASH', 'LBC_PASSWORD']) {
+  const plain = read(key);
+  if (plain && !read(`${key}_B64`)) {
+    setSecret(key, plain);
+    console.log(`✓ ${key} mis à l'abri de l'interprétation de Compose`);
+  }
+}
+
 // --- 1. Secrets techniques, tirés au sort une fois pour toutes -------------
 const generated = [];
 for (const [key, make] of [
@@ -87,7 +98,7 @@ console.log(
 );
 
 // --- 2. Compte d'accès à l'application -------------------------------------
-if (!read('ADMIN_PASSWORD_HASH')) {
+if (!read('ADMIN_PASSWORD_HASH_B64')) {
   console.log('Compte pour te connecter à l’application :');
   const email = await askEmail('  E-mail          : ');
 
@@ -107,17 +118,17 @@ if (!read('ADMIN_PASSWORD_HASH')) {
   }
 
   set('ADMIN_EMAIL', email);
-  set('ADMIN_PASSWORD_HASH', await bcrypt.hash(password, 12));
+  setSecret('ADMIN_PASSWORD_HASH', await bcrypt.hash(password, 12));
   console.log('✓ Mot de passe haché — il n’est stocké nulle part en clair\n');
 } else {
   console.log(`✓ Compte d’accès déjà configuré (${read('ADMIN_EMAIL')})\n`);
 }
 
 // --- 3. Compte leboncoin du collecteur -------------------------------------
-if (!read('LBC_PASSWORD')) {
+if (!read('LBC_PASSWORD_B64')) {
   console.log('Compte leboncoin que le collecteur utilisera :');
   set('LBC_EMAIL', await askEmail('  E-mail          : '));
-  set('LBC_PASSWORD', await ask('  Mot de passe    : ', { mask: true }));
+  setSecret('LBC_PASSWORD', await ask('  Mot de passe    : ', { mask: true }));
   console.log('✓ Enregistré dans .env, sur cette machine uniquement\n');
 } else {
   console.log(`✓ Compte leboncoin déjà configuré (${read('LBC_EMAIL')})\n`);
@@ -160,6 +171,18 @@ function read(key) {
 
 function set(key, value) {
   values.set(key, value);
+}
+
+/**
+ * Range un secret encodé en base64, et retire la version en clair.
+ *
+ * Docker Compose interprète « $ » dans tout fichier d'environnement qu'il lit :
+ * un hash bcrypt y arriverait amputé. Le base64 n'emploie aucun caractère
+ * qu'il touche.
+ */
+function setSecret(key, value) {
+  values.set(`${key}_B64`, Buffer.from(value, 'utf8').toString('base64'));
+  values.delete(key);
 }
 
 /**

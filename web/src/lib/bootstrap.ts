@@ -1,4 +1,5 @@
 import { collections } from './mongo';
+import { readSecret } from './secret';
 
 /**
  * Crée le compte d'accès à partir des variables d'environnement, une seule fois.
@@ -7,7 +8,7 @@ import { collections } from './mongo';
  */
 export async function ensureAdminUser(): Promise<void> {
   const email = process.env.ADMIN_EMAIL?.trim().toLowerCase();
-  const passwordHash = process.env.ADMIN_PASSWORD_HASH?.trim();
+  const passwordHash = readSecret('ADMIN_PASSWORD_HASH');
   if (!email || !passwordHash) return;
 
   const { users } = await collections();

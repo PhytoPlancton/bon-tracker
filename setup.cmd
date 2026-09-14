@@ -58,7 +58,7 @@ if errorlevel 1 (
 )
 
 echo  Demarrage des services...
-docker compose up -d --remove-orphans
+docker compose up -d --remove-orphans --force-recreate
 if errorlevel 1 (
   echo.
   echo  Le demarrage a echoue. Le detail est au-dessus.

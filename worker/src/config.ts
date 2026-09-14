@@ -4,12 +4,26 @@ function required(name: string): string {
   return value;
 }
 
+/**
+ * Secret possiblement porteur de caractères que Docker Compose interprète.
+ * Il est transmis encodé en base64 ; la variable en clair reste acceptée pour
+ * un lancement hors Docker.
+ */
+function requiredSecret(name: string): string {
+  const encoded = process.env[`${name}_B64`]?.trim();
+  if (encoded) {
+    const value = Buffer.from(encoded, 'base64').toString('utf8').trim();
+    if (value) return value;
+  }
+  return required(name);
+}
+
 export const config = {
   /** URL publique de l'app web, à laquelle le worker parle. */
   apiBaseUrl: required('API_BASE_URL').replace(/\/$/, ''),
   workerToken: required('WORKER_TOKEN'),
   lbcEmail: required('LBC_EMAIL'),
-  lbcPassword: required('LBC_PASSWORD'),
+  lbcPassword: requiredSecret('LBC_PASSWORD'),
   /** Toutes les 6 h par défaut, décalé pour éviter les heures rondes. */
   schedule: process.env.CRON_SCHEDULE || '17 */6 * * *',
   runOnStart: process.env.RUN_ON_START !== 'false',
