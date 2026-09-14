@@ -1,0 +1,45 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+html,
+body {
+  background-color: #0b0c0e;
+  color: #e9ecf1;
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior-y: none;
+}
+
+body {
+  /* L'app tourne en plein écran une fois ajoutée à l'écran d'accueil iOS. */
+  min-height: 100dvh;
+}
+
+/* Pas de surlignage bleu au tap sur iOS. */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+@layer utilities {
+  .pt-safe {
+    padding-top: calc(var(--safe-top) + 0.75rem);
+  }
+  .pb-safe {
+    padding-bottom: calc(var(--safe-bottom) + 0.75rem);
+  }
+  .mb-safe-nav {
+    margin-bottom: calc(var(--safe-bottom) + 4.75rem);
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    scrollbar-width: none;
+  }
+}

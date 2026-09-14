@@ -1,0 +1,63 @@
+# Pile complète : base, interface, collecteur, tunnel HTTPS.
+#   docker compose up -d --build
+# Les containers redémarrent d'eux-mêmes avec Docker Desktop.
+
+services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD}
+    volumes:
+      - mongo-data:/data/db
+    # Aucun port publié : la base n'est joignable que par les autres services.
+    healthcheck:
+      test: ['CMD', 'mongosh', '--quiet', '--eval', "db.adminCommand('ping')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  web:
+    build: ./web
+    restart: unless-stopped
+    depends_on:
+      mongo:
+        condition: service_healthy
+    environment:
+      MONGODB_URI: mongodb://${MONGO_USER}:${MONGO_PASSWORD}@mongo:27017/${MONGO_DB:-bon_tracker}?authSource=admin
+      MONGODB_DB: ${MONGO_DB:-bon_tracker}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      SESSION_SECRET: ${SESSION_SECRET}
+      WORKER_TOKEN: ${WORKER_TOKEN}
+      ADMIN_EMAIL: ${ADMIN_EMAIL}
+      ADMIN_PASSWORD_HASH: ${ADMIN_PASSWORD_HASH}
+    ports:
+      # Accessible depuis le PC lui-même ; l'extérieur passe par le tunnel.
+      - '127.0.0.1:3000:3000'
+
+  worker:
+    build: ./worker
+    restart: unless-stopped
+    depends_on:
+      - web
+    environment:
+      API_BASE_URL: http://web:3000
+      WORKER_TOKEN: ${WORKER_TOKEN}
+      LBC_EMAIL: ${LBC_EMAIL}
+      LBC_PASSWORD: ${LBC_PASSWORD}
+      CRON_SCHEDULE: ${CRON_SCHEDULE:-17 */6 * * *}
+      RUN_ON_START: 'true'
+    # Chromium a besoin de mémoire partagée pour ne pas planter.
+    shm_size: 1gb
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    depends_on:
+      - web
+    command: tunnel --no-autoupdate run --token ${TUNNEL_TOKEN}
+
+volumes:
+  mongo-data:
