@@ -53,6 +53,10 @@ services:
       API_BASE_URL: http://web:3000
       CRON_SCHEDULE: ${CRON_SCHEDULE:-17 */6 * * *}
       RUN_ON_START: 'true'
+    volumes:
+      # Captures d'écran laissées par le collecteur quand un relevé échoue :
+      # c'est le seul moyen de voir la page qu'il avait sous les yeux.
+      - ./debug:/app/debug
     # Chromium a besoin de mémoire partagée pour ne pas planter.
     shm_size: 1gb
 

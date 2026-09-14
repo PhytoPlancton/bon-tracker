@@ -1,3 +1,4 @@
+import { mkdir, writeFile } from 'node:fs/promises';
 import { chromium, type Browser, type BrowserContext, type Page } from 'playwright';
 import { config, LBC_ORIGIN } from './config.js';
 import { fetchStoredSession, storeSession } from './api.js';
@@ -61,20 +62,27 @@ export async function dismissCookieBanner(page: Page): Promise<void> {
   }
 }
 
-export async function isLoggedIn(page: Page): Promise<boolean> {
+export type SessionState = 'logged_in' | 'logged_out' | 'challenged';
+
+/**
+ * Établit l'état de la session en ouvrant les favoris.
+ *
+ * Ne renonce jamais de lui-même : rencontrer une vérification ici ne dit rien
+ * de ce qui se passera sur la page de connexion, où l'on a tout intérêt à
+ * tenter sa chance avant de réclamer une session manuelle.
+ */
+export async function checkSession(page: Page): Promise<SessionState> {
   await page.goto(`${LBC_ORIGIN}/favorites`, { waitUntil: 'domcontentloaded', timeout: 45_000 });
   await dismissCookieBanner(page);
   await page.waitForTimeout(1500);
 
-  if (isChallenged(page.url()) || (await hasCaptcha(page))) {
-    throw new NeedsManualSession('Vérification anti-robot rencontrée en ouvrant les favoris');
-  }
+  if (await isBlocked(page)) return 'challenged';
 
   // Redirigé vers la connexion : la session est morte.
   if (/\/(login|connexion)/.test(page.url()) || page.url().includes('compte.leboncoin.fr')) {
-    return false;
+    return 'logged_out';
   }
-  return true;
+  return 'logged_in';
 }
 
 /**
@@ -87,7 +95,7 @@ export async function login(page: Page): Promise<void> {
   await dismissCookieBanner(page);
   await page.waitForTimeout(1200);
 
-  if (isChallenged(page.url()) || (await hasCaptcha(page))) {
+  if (await isBlocked(page)) {
     throw new NeedsManualSession('Vérification anti-robot sur la page de connexion');
   }
 
@@ -134,7 +142,7 @@ export async function login(page: Page): Promise<void> {
   await page.waitForLoadState('networkidle', { timeout: 30_000 }).catch(() => undefined);
   await page.waitForTimeout(2500);
 
-  if (await hasCaptcha(page)) {
+  if (await isBlocked(page)) {
     throw new NeedsManualSession('Vérification anti-robot après envoi du formulaire');
   }
   if (await needsDeviceVerification(page)) {
@@ -153,19 +161,36 @@ export async function persistSession(context: BrowserContext): Promise<void> {
   await storeSession(state as unknown as Record<string, unknown>);
 }
 
-function isChallenged(url: string): boolean {
-  return /captcha|challenge|geo\.captcha/i.test(url);
-}
+/**
+ * Reconnaît un blocage réel, et lui seul.
+ *
+ * Le script anti-robot est chargé sur toutes les pages du site : sa simple
+ * présence ne veut rien dire. Seuls comptent la page de vérification servie à
+ * la place du contenu, l'iframe du captcha, ou le message qui l'accompagne.
+ */
+async function isBlocked(page: Page): Promise<boolean> {
+  if (/geo\.captcha-delivery\.com|\/challenge|captcha-delivery/i.test(page.url())) return true;
 
-async function hasCaptcha(page: Page): Promise<boolean> {
-  if (isChallenged(page.url())) return true;
-  const frames = page.frames().some((frame) => /datadome|captcha/i.test(frame.url()));
-  if (frames) return true;
-  return page
-    .locator('[id*="captcha" i], [class*="captcha" i]')
-    .first()
-    .isVisible({ timeout: 1000 })
-    .catch(() => false);
+  const captchaFrame = page
+    .frames()
+    .some((frame) => /captcha-delivery\.com|geo\.captcha/i.test(frame.url()));
+  if (captchaFrame) return true;
+
+  for (const marker of [
+    'text=/vous avez été bloqué/i',
+    'text=/nous voulons nous assurer/i',
+    'text=/activit[ée] suspecte/i',
+    'text=/unusual traffic/i',
+  ]) {
+    const visible = await page
+      .locator(marker)
+      .first()
+      .isVisible({ timeout: 800 })
+      .catch(() => false);
+    if (visible) return true;
+  }
+
+  return false;
 }
 
 async function needsDeviceVerification(page: Page): Promise<boolean> {
@@ -205,4 +230,23 @@ async function clickFirst(page: Page, selectors: string[]): Promise<boolean> {
     }
   }
   return false;
+}
+
+/**
+ * Enregistre ce que le navigateur voyait au moment d'un échec. Sans cette
+ * trace, diagnostiquer une page qu'on ne peut pas ouvrir soi-même relève de
+ * la devinette.
+ */
+export async function captureDiagnostic(page: Page, label: string): Promise<string | null> {
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const base = `/app/debug/${stamp}-${label}`;
+  try {
+    await mkdir('/app/debug', { recursive: true });
+    await page.screenshot({ path: `${base}.png`, fullPage: false });
+    await writeFile(`${base}.html`, await page.content(), 'utf8');
+    await writeFile(`${base}.txt`, `URL : ${page.url()}\nTitre : ${await page.title()}\n`, 'utf8');
+    return `${base}.png`;
+  } catch {
+    return null;
+  }
 }

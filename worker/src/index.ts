@@ -9,8 +9,9 @@ import {
 } from './api.js';
 import {
   NeedsManualSession,
+  captureDiagnostic,
+  checkSession,
   createContext,
-  isLoggedIn,
   launchBrowser,
   login,
   persistSession,
@@ -52,11 +53,19 @@ async function runOnce(): Promise<void> {
   const page = await context.newPage();
 
   try {
-    if (!(await isLoggedIn(page))) {
-      log('Session absente ou expirée, connexion en cours');
+    const state = await checkSession(page);
+
+    if (state !== 'logged_in') {
+      log(
+        state === 'challenged'
+          ? 'Vérification rencontrée sur les favoris, tentative de connexion malgré tout'
+          : 'Session absente ou expirée, connexion en cours',
+      );
       await login(page);
       await persistSession(context);
       log('Connexion réussie, session enregistrée');
+    } else {
+      log('Session valide, pas de reconnexion nécessaire');
     }
 
     // 1. Les favoris, toujours.
@@ -91,15 +100,21 @@ async function runOnce(): Promise<void> {
     // Les cookies ont pu être rafraîchis pendant la visite.
     await persistSession(context).catch(() => undefined);
   } catch (cause) {
-    if (cause instanceof NeedsManualSession) {
+    // Une trace de l'écran aide à distinguer un vrai blocage d'une page qui a
+    // simplement changé de forme.
+    const blocked = cause instanceof NeedsManualSession;
+    const shot = await captureDiagnostic(page, blocked ? 'session' : 'erreur').catch(() => null);
+
+    if (blocked) {
       status = 'needs_session';
-      error = cause.message;
-      log('Session à rétablir manuellement', cause.message);
+      error = (cause as NeedsManualSession).message;
+      log('Session à rétablir manuellement', error);
     } else {
       status = 'error';
       error = cause instanceof Error ? cause.message : String(cause);
       log('Relevé en échec', error);
     }
+    if (shot) log(`Capture de la page enregistrée dans le dossier debug : ${shot}`);
   } finally {
     await context.close().catch(() => undefined);
     await browser.close().catch(() => undefined);

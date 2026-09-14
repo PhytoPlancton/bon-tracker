@@ -5,5 +5,6 @@ dist/
 .env.local
 .env*.local
 secrets.env
+debug/
 .DS_Store
 *.log
