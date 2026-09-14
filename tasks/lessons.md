@@ -40,6 +40,12 @@ Format : [date] | ce qui a mal tourné | règle pour l'éviter
   pas. | Une constante utilisée par du code de premier niveau se déclare avant
   lui ; seules les fonctions remontent.
 
+- [2026-09-15] | En déplaçant les secrets vers `secrets.env`, l'étape de
+  configuration est devenue impossible à lancer : Compose exige que tout
+  fichier `env_file` existe, et c'est précisément cette étape, exécutée par
+  Compose, qui devait le créer. | Quand un script produit un fichier dont son
+  propre lanceur dépend, créer ce fichier vide en amont.
+
 ## Règles permanentes du projet
 - Un seul client MongoDB, `maxPoolSize` bas : le quota de 500 connexions est
   partagé entre plusieurs applications.

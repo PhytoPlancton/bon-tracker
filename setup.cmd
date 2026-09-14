@@ -28,6 +28,11 @@ if not exist ".env" (
 ) else (
   echo  [2/4] Fichier .env deja present, il sera complete.
 )
+
+rem Compose refuse de demarrer si un fichier env_file manque. Or c'est
+rem l'etape de configuration, lancee par Compose, qui le remplit : on le cree
+rem donc vide au prealable.
+if not exist "secrets.env" type nul > "secrets.env"
 echo.
 
 echo  [3/4] Construction des images...
