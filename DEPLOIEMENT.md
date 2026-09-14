@@ -9,10 +9,12 @@ iPhone ──HTTPS──> Cloudflare ──tunnel sortant──> cloudflared ─
                                                                worker (Chromium)
 ```
 
-> **Toutes les commandes ci-dessous sont à taper dans PowerShell**, pas dans
-> l'invite de commandes classique (`cmd`). Menu Démarrer → *Windows PowerShell*.
-> Sous macOS/Linux, les mêmes commandes fonctionnent en remplaçant `Copy-Item`
-> par `cp`.
+> **À taper dans PowerShell** (Menu Démarrer → *Windows PowerShell*), pas dans
+> l'invite de commandes classique.
+>
+> **Une commande à la fois** : copier plusieurs lignes d'un coup les colle
+> souvent bout à bout et produit des erreurs du genre
+> `cd bon-trackerCopy-Item`. Valider chaque ligne avec Entrée avant la suivante.
 
 ---
 
@@ -32,47 +34,28 @@ ZIP**), l'extraire dans `Documents\bon-tracker`, puis `cd $HOME\Documents\bon-tr
 Toutes les commandes suivantes se lancent **depuis ce dossier** (celui qui
 contient `docker-compose.yml`).
 
-## 2. Préparer le fichier de configuration
+## 2. Tout installer en une commande
 
 ```powershell
-Copy-Item .env.example .env
-notepad .env
+.\setup.cmd
 ```
 
-## 3. Générer les secrets
+Le script vérifie Docker, construit les images, génère les secrets, demande les
+deux comptes et le tunnel, puis démarre les services. Il est relançable : les
+valeurs déjà renseignées sont conservées.
 
-Sans rien installer sur la machine :
+Ce qu'il demande :
 
-```powershell
-docker run --rm node:22-alpine node -e "const c=require('node:crypto');console.log('MONGO_PASSWORD='+c.randomBytes(24).toString('base64url'));console.log('ENCRYPTION_KEY='+c.randomBytes(32).toString('base64'));console.log('SESSION_SECRET='+c.randomBytes(48).toString('base64url'));console.log('WORKER_TOKEN='+c.randomBytes(32).toString('base64url'))"
-```
+| Question | Ce qu'il faut donner |
+|---|---|
+| Compte de l'application | Un e-mail et un mot de passe **de ton choix**, pour te connecter à Bon Tracker. Le mot de passe n'est jamais stocké : seul son hash bcrypt est écrit. |
+| Compte leboncoin | Les identifiants de **ton compte leboncoin**, dont le collecteur a besoin pour voir tes favoris. Ils restent dans le `.env`, sur cette machine. |
+| Token du tunnel | Voir l'étape suivante. Tu peux laisser vide et y revenir plus tard. |
 
-Recopier les quatre lignes dans `.env`.
+Les saisies de mot de passe n'affichent rien à l'écran — c'est normal, continue
+de taper puis valide avec Entrée.
 
-## 4. Construire les images
-
-```powershell
-docker compose build
-```
-
-Le worker télécharge Chromium : compter quelques minutes la première fois.
-
-## 5. Créer le compte d'accès
-
-```powershell
-docker compose run --rm --no-deps web node scripts/hash-password.mjs
-```
-
-Le mot de passe est saisi en local et n'est jamais affiché. La commande renvoie
-`ADMIN_EMAIL` et `ADMIN_PASSWORD_HASH` : les recopier dans `.env`. **Seul le hash
-bcrypt est stocké.**
-
-## 6. Renseigner le compte leboncoin
-
-Dans `.env` : `LBC_EMAIL` et `LBC_PASSWORD`. Ces valeurs ne servent qu'au
-collecteur, restent sur ta machine, et ne sont jamais écrites dans une image.
-
-## 7. Créer le tunnel Cloudflare
+## 3. Créer le tunnel Cloudflare
 
 1. [Cloudflare Zero Trust](https://one.dash.cloudflare.com) → **Networks → Tunnels**
 2. **Create a tunnel** → type **Cloudflared** → nom : `bon-tracker`
@@ -83,13 +66,10 @@ collecteur, restent sur ta machine, et ne sont jamais écrites dans une image.
    - Service : **HTTP** → `web:3000`
 5. Cloudflare crée le DNS tout seul : rien à ajouter à la main.
 
-## 8. Démarrer
+Si tu avais laissé le token vide, relance `.\setup.cmd` : il ne redemandera que
+celui-ci.
 
-```powershell
-docker compose up -d
-```
-
-Vérifier que tout est debout :
+## 4. Vérifier que ça tourne
 
 ```powershell
 docker compose ps
@@ -98,8 +78,9 @@ docker compose logs -f worker
 
 Le collecteur lance un relevé immédiatement, puis toutes les 6 h — et refait un
 relevé à chaque démarrage du PC, ce qui rattrape les périodes d'extinction.
+Quitter l'affichage des logs : `Ctrl+C`.
 
-## 9. Installer sur iPhone
+## 5. Installer sur iPhone
 
 Safari → `https://bontracker.nmt.ovh` → se connecter → **Partager** →
 **Sur l'écran d'accueil**. L'app s'ouvre en plein écran, sans barre Safari.

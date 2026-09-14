@@ -7,8 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "hash-password": "node scripts/hash-password.mjs",
-    "gen-secrets": "node scripts/gen-secrets.mjs"
+    "setup": "node scripts/setup.mjs ../.env"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
