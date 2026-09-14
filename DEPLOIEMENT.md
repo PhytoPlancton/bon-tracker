@@ -22,7 +22,7 @@ Le projet a été développé ailleurs : il faut d'abord l'amener ici.
 
 ```powershell
 cd $HOME\Documents
-git clone <url-du-dépôt> bon-tracker
+git clone https://github.com/PhytoPlancton/bon-tracker.git
 cd bon-tracker
 ```
 
@@ -115,7 +115,7 @@ Safari → `https://bontracker.nmt.ovh` → se connecter → **Partager** →
 |---|---|
 | Voir les relevés | `docker compose logs -f worker` |
 | Forcer un relevé | `docker compose restart worker` |
-| Mettre à jour après modification du code | `docker compose up -d --build` |
+| Récupérer les dernières modifications | `git pull` puis `docker compose up -d --build` |
 | Sauvegarder la base | `docker compose exec -T mongo mongodump --archive --db bon_tracker --username bontracker --password "<MONGO_PASSWORD>" --authenticationDatabase admin > sauvegarde.archive` |
 | Restaurer | `Get-Content sauvegarde.archive -Raw \| docker compose exec -T mongo mongorestore --archive --username bontracker --password "<MONGO_PASSWORD>" --authenticationDatabase admin` |
 | Tout arrêter | `docker compose down` (les données survivent dans le volume) |
