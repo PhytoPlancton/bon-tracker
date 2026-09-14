@@ -55,7 +55,7 @@ console.log(
 // --- 2. Compte d'accès à l'application -------------------------------------
 if (!read('ADMIN_PASSWORD_HASH')) {
   console.log('Compte pour te connecter à l’application :');
-  const email = (await ask('  E-mail          : ')).trim().toLowerCase();
+  const email = await askEmail('  E-mail          : ');
 
   let password = '';
   for (;;) {
@@ -82,7 +82,7 @@ if (!read('ADMIN_PASSWORD_HASH')) {
 // --- 3. Compte leboncoin du collecteur -------------------------------------
 if (!read('LBC_PASSWORD')) {
   console.log('Compte leboncoin que le collecteur utilisera :');
-  set('LBC_EMAIL', (await ask('  E-mail          : ')).trim());
+  set('LBC_EMAIL', await askEmail('  E-mail          : '));
   set('LBC_PASSWORD', await ask('  Mot de passe    : ', { mask: true }));
   console.log('✓ Enregistré dans .env, sur cette machine uniquement\n');
 } else {
@@ -131,6 +131,19 @@ function set(key, value) {
   const index = lines.findIndex((entry) => entry.startsWith(`${key}=`));
   if (index === -1) lines.push(`${key}=${value}`);
   else lines[index] = `${key}=${value}`;
+}
+
+/**
+ * Demande une adresse jusqu'à ce qu'elle en soit une. Sans ce garde-fou, une
+ * commande collée par mégarde dans le champ serait acceptée telle quelle et
+ * finirait comme identifiant de connexion.
+ */
+async function askEmail(prompt) {
+  for (;;) {
+    const value = (await ask(prompt)).trim().toLowerCase();
+    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) return value;
+    console.log('  ⚠ Ce n’est pas une adresse e-mail. Recommence.');
+  }
 }
 
 /**

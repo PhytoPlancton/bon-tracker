@@ -19,6 +19,16 @@ Format : [date] | ce qui a mal tourné | règle pour l'éviter
   vision deutan. | Une information portée par la couleur (hausse/baisse) doit
   toujours être doublée d'un signe : flèche + montant signé.
 
+- [2026-09-15] | Une commande donnée dans la conversation a été collée dans le
+  champ « E-mail » d'un script interactif, qui l'a acceptée telle quelle. | Ne
+  jamais fournir de commande à copier pendant qu'un script attend une saisie ;
+  et valider toute réponse dont le format est connu plutôt que de faire
+  confiance à ce qui arrive.
+- [2026-09-14] | Les commandes de déploiement étaient écrites en bash alors que
+  la machine cible tourne sous Windows, et l'étape « récupérer le code sur la
+  machine cible » manquait. | Écrire la documentation pour la machine où elle
+  sera exécutée, pas pour celle où le code a été écrit.
+
 ## Règles permanentes du projet
 - Un seul client MongoDB, `maxPoolSize` bas : le quota de 500 connexions est
   partagé entre plusieurs applications.
