@@ -67,7 +67,7 @@ export function fetchTrackedSearches() {
 }
 
 export function reportSearches(
-  searches: { lbcSearchId: string; name: string; url: string; category?: string | null; itemCount?: number }[],
+  searches: { lbcSearchId: string; name: string; url: string; details?: string | null; itemCount?: number }[],
 ) {
   return call<{ upserted: number }>('/api/internal/searches', {
     method: 'POST',

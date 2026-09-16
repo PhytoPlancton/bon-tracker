@@ -69,6 +69,13 @@ Format : [date] | ce qui a mal tourné | règle pour l'éviter
   avec sa vraie empreinte et sa vraie session. Et instrumenter tôt (capture
   d'écran) plutôt que de deviner ce que voit un navigateur qu'on n'observe pas.
 
+- [2026-09-16] | Deux corrections successives du nom des recherches, fondées
+  sur des suppositions de structure : le nom venait du lien, puis du titre de
+  la page. Les cartes ne contiennent aucun titre de section, ce qu'une seule
+  inspection aurait révélé d'emblée. | Avant d'écrire un sélecteur, faire
+  afficher la structure réelle de la page ; une ligne dans la console d'un
+  navigateur connecté coûte moins qu'un aller-retour de correction.
+
 ## Règles permanentes du projet
 - Un seul client MongoDB, `maxPoolSize` bas : le quota de 500 connexions est
   partagé entre plusieurs applications.

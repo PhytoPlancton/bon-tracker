@@ -29,7 +29,7 @@ const schema = z.object({
         lbcSearchId: z.string().min(1),
         name: z.string().min(1),
         url: z.string().url(),
-        category: z.string().nullable().optional(),
+        details: z.string().max(300).nullable().optional(),
         itemCount: z.number().int().nonnegative().optional(),
       }),
     )
@@ -56,7 +56,7 @@ export async function POST(request: Request) {
           $set: {
             name: item.name,
             url: item.url,
-            category: item.category ?? null,
+            details: item.details ?? null,
             itemCount: item.itemCount ?? 0,
           },
           $setOnInsert: { lbcSearchId: item.lbcSearchId, tracked: false, lastRunAt: null },

@@ -9,7 +9,7 @@ interface SearchesResponse {
     lbcSearchId: string;
     name: string;
     url: string;
-    category: string | null;
+    details: string | null;
     tracked: boolean;
     lastRunAt: string | null;
     itemCount: number;
@@ -60,11 +60,24 @@ export default function SearchesPage() {
               className="flex items-center gap-3 rounded-2xl border border-ink-line bg-ink-soft p-3.5"
             >
               <div className="min-w-0 flex-1">
-                <div className="truncate text-[14px] font-medium text-zinc-100">{search.name}</div>
-                <div className="mt-0.5 text-[11px] text-zinc-600">
-                  {search.category ?? 'toutes catégories'}
-                  {search.tracked && ` · relevé ${relativeTime(search.lastRunAt)}`}
+                <div className="flex items-center gap-2">
+                  <span className="truncate text-[14px] font-medium text-zinc-100">
+                    {search.name}
+                  </span>
+                  {search.itemCount > 0 && (
+                    <span className="shrink-0 rounded-full bg-accent/15 px-1.5 py-0.5 text-[10px] font-medium text-accent">
+                      {search.itemCount}
+                    </span>
+                  )}
                 </div>
+                {search.details && (
+                  <div className="mt-0.5 truncate text-[11px] text-zinc-500">{search.details}</div>
+                )}
+                {search.tracked && (
+                  <div className="mt-0.5 text-[11px] text-zinc-600">
+                    relevé {relativeTime(search.lastRunAt)}
+                  </div>
+                )}
               </div>
 
               <Toggle

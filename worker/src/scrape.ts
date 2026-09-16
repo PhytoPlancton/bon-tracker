@@ -163,11 +163,18 @@ export interface DiscoveredSearch {
   lbcSearchId: string;
   name: string;
   url: string;
-  category: string | null;
+  /** Critères de la recherche, tels que le site les résume. */
+  details: string | null;
   itemCount: number;
 }
 
-/** Relève les recherches sauvegardées du compte pour que l'app puisse les proposer. */
+/**
+ * Relève les recherches sauvegardées du compte.
+ *
+ * Chaque recherche est un `<article>` sans titre de section : le nom se trouve
+ * dans le paragraphe de classe « text-headline », le compteur dans la pastille
+ * ronde, et les critères dans le premier paragraphe de corps de texte.
+ */
 export async function collectSavedSearches(page: Page): Promise<DiscoveredSearch[]> {
   await page.goto(`${LBC_ORIGIN}/my-searches`, {
     waitUntil: 'domcontentloaded',
@@ -178,52 +185,19 @@ export async function collectSavedSearches(page: Page): Promise<DiscoveredSearch
   await page.waitForTimeout(1200);
 
   return page.evaluate((origin) => {
-    // Libellés des boutons et mentions de la carte : ce ne sont jamais des noms
-    // de recherche, et le lien vers les résultats en porte un.
-    const GENERIC =
-      /^(voir les r[ée]sultats|[êe]tre alert[ée]|toute la france|modifier|supprimer|d[ée]sactiver|activer|g[ée]rer)/i;
-
-    const clean = (text: string | null | undefined) =>
-      (text ?? '').replace(/\s+/g, ' ').trim();
-
-    /** Remonte jusqu'à l'élément de carte, reconnu à ce qu'il porte un titre. */
-    const findCard = (anchor: Element): Element => {
-      let node: Element = anchor;
-      for (let depth = 0; depth < 6 && node.parentElement; depth += 1) {
-        node = node.parentElement;
-        if (node.querySelector('h1, h2, h3, h4')) return node;
-      }
-      return anchor.closest('article, li') ?? anchor.parentElement ?? anchor;
-    };
-
-    /** Le nom est le titre de la carte ; à défaut, son texte le plus plausible. */
-    const extractName = (card: Element, fallback: string): string => {
-      const heading = card.querySelector('h1, h2, h3, h4, [data-test-id*="title" i]');
-      const fromHeading = clean(heading?.textContent);
-      if (fromHeading && !GENERIC.test(fromHeading)) return fromHeading;
-
-      const candidates = Array.from(card.querySelectorAll('span, div, p, strong'))
-        .map((node) => clean(node.textContent))
-        .filter(
-          (text) =>
-            text.length > 2 &&
-            text.length < 120 &&
-            !GENERIC.test(text) &&
-            !/^\d+\+?$/.test(text) &&
-            !/^\d{1,2} \w+\.? \d{4}$/.test(text),
-        );
-      return candidates[0] ?? fallback;
-    };
+    const clean = (text: string | null | undefined) => (text ?? '').replace(/\s+/g, ' ').trim();
+    const ACTIONS = /^([êe]tre alert[ée]|voir les r[ée]sultats)/i;
 
     const results: Record<string, unknown>[] = [];
     const seen = new Set<string>();
 
-    for (const anchor of Array.from(document.querySelectorAll('a[href*="/recherche"]'))) {
-      const href = anchor.getAttribute('href') ?? '';
-      if (!href.includes('/recherche')) continue;
+    for (const card of Array.from(document.querySelectorAll('article'))) {
+      const anchor = card.querySelector('a[href*="/recherche"]');
+      const href = anchor?.getAttribute('href');
+      if (!href) continue;
 
       const url = href.startsWith('http') ? href : origin + href;
-      // Identifiant stable dérivé de l'URL : le site n'en expose pas toujours un.
+      // Identifiant stable dérivé de l'URL : le site n'en expose pas d'autre.
       const key = url.split('?')[1] ?? url;
       let hash = 0;
       for (let i = 0; i < key.length; i += 1) {
@@ -233,21 +207,18 @@ export async function collectSavedSearches(page: Page): Promise<DiscoveredSearch
       if (seen.has(lbcSearchId)) continue;
       seen.add(lbcSearchId);
 
-      const card = findCard(anchor);
-      const cardText = clean(card.textContent);
-      const name = extractName(card, `Recherche ${lbcSearchId}`);
-      const countMatch = cardText.match(/(\d+)\+?/);
-      const category = clean(
-        card.querySelector('[class*="badge" i], [data-test-id*="category" i]')?.textContent,
-      );
+      const name = clean(card.querySelector('[class*="headline"]')?.textContent);
+      const details = Array.from(card.querySelectorAll('p'))
+        .map((node) => clean(node.textContent))
+        .find((text) => text && !ACTIONS.test(text) && text !== name);
+      const count = clean(card.querySelector('[class*="rounded-full"]')?.textContent);
 
       results.push({
         lbcSearchId,
-        // Le compteur colle parfois au titre : « Locations 23 ».
-        name: name.replace(/\s+\d+\+?$/, '').trim() || name,
+        name: name || `Recherche ${lbcSearchId}`,
         url,
-        category: category && !GENERIC.test(category) ? category : null,
-        itemCount: countMatch ? Number(countMatch[1]) : 0,
+        details: details ?? null,
+        itemCount: Number(count.replace(/\D/g, '')) || 0,
       });
     }
 

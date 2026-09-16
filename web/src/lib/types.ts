@@ -25,7 +25,8 @@ export interface SavedSearch {
   lbcSearchId: string;
   name: string;
   url: string;
-  category: string | null;
+  /** Critères de la recherche, tels que le site les résume. */
+  details: string | null;
   tracked: boolean;
   lastRunAt: Date | null;
   itemCount: number;
