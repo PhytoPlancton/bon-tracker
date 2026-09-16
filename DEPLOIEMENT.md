@@ -69,6 +69,30 @@ de taper puis valide avec Entrée.
 Si tu avais laissé le token vide, relance `.\setup.cmd` : il ne redemandera que
 celui-ci.
 
+## 3 bis. Lancer le Chrome dédié
+
+Le collecteur ne navigue pas lui-même : il pilote un Chrome installé sur la
+machine. Un navigateur lancé par un robot est reconnu comme tel dès la première
+page par la protection du site, quels que soient les cookies fournis.
+
+```powershell
+.\start-chrome.cmd
+```
+
+Une fenêtre Chrome s'ouvre, avec un profil séparé de ta navigation habituelle.
+**Connecte-toi à leboncoin dedans, une seule fois.** La session y reste ensuite.
+
+Laisse cette fenêtre ouverte : sans elle, aucun relevé n'a lieu. Tu peux la
+réduire, elle n'a pas besoin d'être visible.
+
+Pour qu'elle revienne à chaque démarrage du PC : `Win+R`, taper `shell:startup`,
+et y glisser un raccourci vers `start-chrome.cmd`.
+
+> Ce Chrome écoute sur le port 9222 pour être pilotable, ce qui le rend visible
+> depuis le réseau local. Sur un réseau domestique c'est sans conséquence ;
+> évite-le sur un réseau partagé, ou bloque le port 9222 dans le pare-feu
+> Windows sauf pour Docker.
+
 ## 4. Vérifier que ça tourne
 
 ```powershell
@@ -95,7 +119,7 @@ Safari → `https://bontracker.nmt.ovh` → se connecter → **Partager** →
 | Besoin | Commande |
 |---|---|
 | Voir les relevés | `docker compose logs -f worker` |
-| Forcer un relevé | `docker compose restart worker` |
+| Forcer un relevé | `docker compose run --rm worker node dist/index.js --once` |
 | Récupérer les dernières modifications | `git pull` puis `docker compose up -d --build` |
 | Sauvegarder la base | `docker compose exec -T mongo mongodump --archive --db bon_tracker --username bontracker --password "<MONGO_PASSWORD>" --authenticationDatabase admin > sauvegarde.archive` |
 | Restaurer | `Get-Content sauvegarde.archive -Raw \| docker compose exec -T mongo mongorestore --archive --username bontracker --password "<MONGO_PASSWORD>" --authenticationDatabase admin` |
@@ -109,9 +133,11 @@ pile remonte d'elle-même après un redémarrage du PC.
 ## Dépannage
 
 **« Session leboncoin à rétablir » dans l'app**
-leboncoin a opposé une vérification au collecteur. Écran **Réglages** → coller
-l'en-tête `Cookie` d'un navigateur déjà connecté (marche à suivre dépliable sur
-l'écran). Le relevé suivant repart avec cette session.
+Trois causes possibles, que le message précise :
+- le Chrome dédié n'est pas lancé → `.\start-chrome.cmd` ;
+- personne n'y est connecté → se connecter à leboncoin dans cette fenêtre ;
+- le site demande une vérification → l'ouvrir dans ce Chrome et faire glisser
+  le curseur soi-même, puis relancer un relevé.
 
 **Le worker redémarre en boucle**
 Une variable d'environnement manque : il s'arrête volontairement plutôt que de

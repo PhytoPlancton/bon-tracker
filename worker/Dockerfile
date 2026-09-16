@@ -14,10 +14,9 @@ ENV NODE_ENV=production
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 
-# Chromium est installé par Playwright lui-même : la version du navigateur
-# suit toujours celle de la bibliothèque, sans image de base à resynchroniser.
-RUN npx playwright install --with-deps chromium && \
-    rm -rf /var/lib/apt/lists/*
+# Aucun navigateur n'est installé ici : le collecteur pilote le Chrome de la
+# machine hôte, dont l'empreinte est celle d'un vrai poste. Un Chromium lancé
+# depuis un container se fait reconnaître comme robot dès la première page.
 
 COPY --from=builder /app/dist ./dist
 

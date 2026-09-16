@@ -11,10 +11,8 @@ import {
   NeedsManualSession,
   captureDiagnostic,
   checkSession,
-  createContext,
-  launchBrowser,
-  login,
-  persistSession,
+  connectToChrome,
+  mainContext,
 } from './browser.js';
 import { collectListings, collectSavedSearches } from './scrape.js';
 
@@ -48,25 +46,27 @@ async function runOnce(): Promise<void> {
   let error: string | null = null;
   const trackedSearchIds: string[] = [];
 
-  const browser = await launchBrowser();
-  const context = await createContext(browser);
+  const browser = await connectToChrome();
+  const context = mainContext(browser);
+  // Un onglet à nous, pour ne pas détourner celui que l'utilisateur consulte.
   const page = await context.newPage();
 
   try {
     const state = await checkSession(page);
 
-    if (state !== 'logged_in') {
-      log(
-        state === 'challenged'
-          ? 'Vérification rencontrée sur les favoris, tentative de connexion malgré tout'
-          : 'Session absente ou expirée, connexion en cours',
+    if (state === 'challenged') {
+      throw new NeedsManualSession(
+        'Le site demande une vérification. Ouvre leboncoin dans le Chrome dédié, ' +
+          'fais glisser le curseur, puis relance un relevé.',
       );
-      await login(page);
-      await persistSession(context);
-      log('Connexion réussie, session enregistrée');
-    } else {
-      log('Session valide, pas de reconnexion nécessaire');
     }
+    if (state === 'logged_out') {
+      throw new NeedsManualSession(
+        'Personne n’est connecté dans le Chrome dédié. Connecte-toi à leboncoin ' +
+          'dans cette fenêtre : la session y restera.',
+      );
+    }
+    log('Session valide dans le Chrome dédié');
 
     // 1. Les favoris, toujours.
     const favorites = await collectListings(page, `${LBC_ORIGIN}/favorites`);
@@ -96,19 +96,14 @@ async function runOnce(): Promise<void> {
       }
       trackedSearchIds.push(search.lbcSearchId);
     }
-
-    // Les cookies ont pu être rafraîchis pendant la visite.
-    await persistSession(context).catch(() => undefined);
   } catch (cause) {
-    // Une trace de l'écran aide à distinguer un vrai blocage d'une page qui a
-    // simplement changé de forme.
     const blocked = cause instanceof NeedsManualSession;
     const shot = await captureDiagnostic(page, blocked ? 'session' : 'erreur').catch(() => null);
 
     if (blocked) {
       status = 'needs_session';
       error = (cause as NeedsManualSession).message;
-      log('Session à rétablir manuellement', error);
+      log('Intervention nécessaire', error);
     } else {
       status = 'error';
       error = cause instanceof Error ? cause.message : String(cause);
@@ -116,7 +111,8 @@ async function runOnce(): Promise<void> {
     }
     if (shot) log(`Capture de la page enregistrée dans le dossier debug : ${shot}`);
   } finally {
-    await context.close().catch(() => undefined);
+    // On ferme notre onglet, jamais le navigateur : il appartient à l'utilisateur.
+    await page.close().catch(() => undefined);
     await browser.close().catch(() => undefined);
     running = false;
   }
@@ -129,9 +125,7 @@ async function runOnce(): Promise<void> {
 }
 
 async function main(): Promise<void> {
-  const once = process.argv.includes('--once');
-
-  if (once) {
+  if (process.argv.includes('--once')) {
     await runOnce();
     return;
   }
@@ -141,11 +135,8 @@ async function main(): Promise<void> {
     void runOnce();
   });
 
-  if (config.runOnStart) {
-    void runOnce();
-  }
+  if (config.runOnStart) void runOnce();
 
-  // Arrêt propre : on laisse le relevé en cours se terminer.
   for (const signal of ['SIGTERM', 'SIGINT'] as const) {
     process.on(signal, () => {
       log(`${signal} reçu, arrêt`);
@@ -155,6 +146,13 @@ async function main(): Promise<void> {
 }
 
 void main().catch((cause) => {
-  log('Démarrage impossible', String(cause));
-  process.exit(1);
+  // Une panne au démarrage doit rester visible dans l'app, pas seulement en logs.
+  const message = cause instanceof Error ? cause.message : String(cause);
+  log('Relevé impossible', message);
+  void reportRun({
+    startedAt: new Date().toISOString(),
+    status: cause instanceof NeedsManualSession ? 'needs_session' : 'error',
+    stats: { seen: 0, created: 0, priceChanges: 0, deactivated: 0 },
+    error: message,
+  }).catch(() => undefined);
 });

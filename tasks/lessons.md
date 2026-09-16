@@ -60,6 +60,15 @@ Format : [date] | ce qui a mal tourné | règle pour l'éviter
   tiers au démarrage d'un container : la mise au point en recrée beaucoup. Une
   action visible de l'extérieur se déclenche sur planification ou à la demande.
 
+- [2026-09-16] | Trois jours passés à vouloir faire naviguer un Chromium piloté
+  par Playwright sur un site protégé par DataDome : blocages en série, y compris
+  du navigateur personnel de la maison. La capture d'écran ajoutée au collecteur
+  a montré une vraie page de vérification, écartant enfin l'hypothèse d'un faux
+  positif. | Contre une protection anti-robot sérieuse, ne pas chercher à
+  déguiser un navigateur automatisé : piloter un vrai navigateur déjà installé,
+  avec sa vraie empreinte et sa vraie session. Et instrumenter tôt (capture
+  d'écran) plutôt que de deviner ce que voit un navigateur qu'on n'observe pas.
+
 ## Règles permanentes du projet
 - Un seul client MongoDB, `maxPoolSize` bas : le quota de 500 connexions est
   partagé entre plusieurs applications.

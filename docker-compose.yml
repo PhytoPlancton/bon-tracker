@@ -49,8 +49,15 @@ services:
       - web
     env_file:
       - secrets.env
+    # Le collecteur pilote le Chrome lancé sur la machine plutôt que d'ouvrir
+    # son propre navigateur : celui de Playwright se fait reconnaître comme
+    # robot dès la première page.
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
     environment:
       API_BASE_URL: http://web:3000
+      CHROME_HOST: ${CHROME_HOST:-host.docker.internal}
+      CHROME_PORT: ${CHROME_PORT:-9222}
       CRON_SCHEDULE: ${CRON_SCHEDULE:-17 */6 * * *}
       # Volontairement désactivé : chaque recréation de container déclenchait
       # sinon une visite du site. Une série de redémarrages pendant une mise au
@@ -62,8 +69,6 @@ services:
       # Captures d'écran laissées par le collecteur quand un relevé échoue :
       # c'est le seul moyen de voir la page qu'il avait sous les yeux.
       - ./debug:/app/debug
-    # Chromium a besoin de mémoire partagée pour ne pas planter.
-    shm_size: 1gb
 
   cloudflared:
     image: cloudflare/cloudflared:latest
