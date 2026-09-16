@@ -139,7 +139,10 @@ if (!read('TUNNEL_TOKEN')) {
   console.log('Tunnel Cloudflare — à créer sur one.dash.cloudflare.com :');
   console.log('  Networks → Tunnels → Create a tunnel → Cloudflared');
   console.log('  puis Public Hostname : bontracker.nmt.ovh → HTTP → web:3000');
-  const token = (await ask('\n  Token du tunnel (vide pour plus tard) : ')).trim();
+  const answer = await ask('\n  Token du tunnel (vide pour plus tard) : ');
+  // Cloudflare présente le jeton au milieu d'une commande d'installation :
+  // on accepte qu'elle soit collée telle quelle.
+  const token = extractTunnelToken(answer);
   set('TUNNEL_TOKEN', token);
   if (token) {
     console.log('✓ Tunnel configuré\n');
@@ -167,6 +170,14 @@ stdin.pause();
 
 function read(key) {
   return values.get(key) || null;
+}
+
+/** Isole le jeton, qu'il soit collé seul ou dans la commande qui l'entoure. */
+function extractTunnelToken(answer) {
+  const text = (answer ?? '').trim();
+  if (!text) return '';
+  const match = text.match(/eyJ[A-Za-z0-9_\-=.]+/);
+  return match ? match[0] : text;
 }
 
 function set(key, value) {
