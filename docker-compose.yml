@@ -52,7 +52,12 @@ services:
     environment:
       API_BASE_URL: http://web:3000
       CRON_SCHEDULE: ${CRON_SCHEDULE:-17 */6 * * *}
-      RUN_ON_START: 'true'
+      # Volontairement désactivé : chaque recréation de container déclenchait
+      # sinon une visite du site. Une série de redémarrages pendant une mise au
+      # point a suffi à faire marquer l'adresse IP comme robot, bloquant aussi
+      # le navigateur de la maison. Un relevé manquant se rattrape ; une adresse
+      # bloquée coûte des heures.
+      RUN_ON_START: ${RUN_ON_START:-false}
     volumes:
       # Captures d'écran laissées par le collecteur quand un relevé échoue :
       # c'est le seul moyen de voir la page qu'il avait sous les yeux.

@@ -26,7 +26,8 @@ export const config = {
   lbcPassword: requiredSecret('LBC_PASSWORD'),
   /** Toutes les 6 h par défaut, décalé pour éviter les heures rondes. */
   schedule: process.env.CRON_SCHEDULE || '17 */6 * * *',
-  runOnStart: process.env.RUN_ON_START !== 'false',
+  /** Relevé immédiat au démarrage : à n'activer que délibérément. */
+  runOnStart: process.env.RUN_ON_START === 'true',
   headless: process.env.HEADLESS !== 'false',
   /** Pause entre deux pages, pour ne pas marteler le site. */
   pageDelayMs: Number(process.env.PAGE_DELAY_MS || 4000),

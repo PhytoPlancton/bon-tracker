@@ -53,6 +53,13 @@ Format : [date] | ce qui a mal tourné | règle pour l'éviter
   Compose, qui devait le créer. | Quand un script produit un fichier dont son
   propre lanceur dépend, créer ce fichier vide en amont.
 
+- [2026-09-15] | Le collecteur lançait un relevé à chaque démarrage de
+  container. Une dizaine de recréations pendant une mise au point ont fait
+  marquer l'adresse IP du domicile comme robot par le site, bloquant du même
+  coup le navigateur personnel. | Ne jamais déclencher d'accès à un service
+  tiers au démarrage d'un container : la mise au point en recrée beaucoup. Une
+  action visible de l'extérieur se déclenche sur planification ou à la demande.
+
 ## Règles permanentes du projet
 - Un seul client MongoDB, `maxPoolSize` bas : le quota de 500 connexions est
   partagé entre plusieurs applications.
