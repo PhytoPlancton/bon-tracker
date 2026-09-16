@@ -83,6 +83,17 @@ async function runOnce(): Promise<void> {
     if (discovered.length) {
       await reportSearches(discovered);
       log(`Recherches sauvegardées : ${discovered.length} détectées`);
+
+      // Des noms tous identiques trahissent une extraction qui a ramassé un
+      // libellé de bouton : on garde la page pour pouvoir viser juste.
+      const distinct = new Set(discovered.map((search) => search.name));
+      if (distinct.size < discovered.length / 2) {
+        const shot = await captureDiagnostic(page, 'recherches').catch(() => null);
+        log(
+          `Noms de recherches douteux (${distinct.size} distincts sur ${discovered.length}).` +
+            (shot ? ` Page enregistrée : ${shot}` : ''),
+        );
+      }
     }
 
     // 3. Celles que l'utilisateur a activées.

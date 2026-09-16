@@ -178,6 +178,43 @@ export async function collectSavedSearches(page: Page): Promise<DiscoveredSearch
   await page.waitForTimeout(1200);
 
   return page.evaluate((origin) => {
+    // Libellés des boutons et mentions de la carte : ce ne sont jamais des noms
+    // de recherche, et le lien vers les résultats en porte un.
+    const GENERIC =
+      /^(voir les r[ée]sultats|[êe]tre alert[ée]|toute la france|modifier|supprimer|d[ée]sactiver|activer|g[ée]rer)/i;
+
+    const clean = (text: string | null | undefined) =>
+      (text ?? '').replace(/\s+/g, ' ').trim();
+
+    /** Remonte jusqu'à l'élément de carte, reconnu à ce qu'il porte un titre. */
+    const findCard = (anchor: Element): Element => {
+      let node: Element = anchor;
+      for (let depth = 0; depth < 6 && node.parentElement; depth += 1) {
+        node = node.parentElement;
+        if (node.querySelector('h1, h2, h3, h4')) return node;
+      }
+      return anchor.closest('article, li') ?? anchor.parentElement ?? anchor;
+    };
+
+    /** Le nom est le titre de la carte ; à défaut, son texte le plus plausible. */
+    const extractName = (card: Element, fallback: string): string => {
+      const heading = card.querySelector('h1, h2, h3, h4, [data-test-id*="title" i]');
+      const fromHeading = clean(heading?.textContent);
+      if (fromHeading && !GENERIC.test(fromHeading)) return fromHeading;
+
+      const candidates = Array.from(card.querySelectorAll('span, div, p, strong'))
+        .map((node) => clean(node.textContent))
+        .filter(
+          (text) =>
+            text.length > 2 &&
+            text.length < 120 &&
+            !GENERIC.test(text) &&
+            !/^\d+\+?$/.test(text) &&
+            !/^\d{1,2} \w+\.? \d{4}$/.test(text),
+        );
+      return candidates[0] ?? fallback;
+    };
+
     const results: Record<string, unknown>[] = [];
     const seen = new Set<string>();
 
@@ -196,17 +233,20 @@ export async function collectSavedSearches(page: Page): Promise<DiscoveredSearch
       if (seen.has(lbcSearchId)) continue;
       seen.add(lbcSearchId);
 
-      const card = anchor.closest('article, li, div[class*="card" i]') ?? anchor;
-      const name =
-        anchor.textContent?.trim().replace(/\s+/g, ' ').slice(0, 120) ||
-        `Recherche ${lbcSearchId}`;
-      const countMatch = (card.textContent ?? '').match(/(\d+)\+?\s*$/);
+      const card = findCard(anchor);
+      const cardText = clean(card.textContent);
+      const name = extractName(card, `Recherche ${lbcSearchId}`);
+      const countMatch = cardText.match(/(\d+)\+?/);
+      const category = clean(
+        card.querySelector('[class*="badge" i], [data-test-id*="category" i]')?.textContent,
+      );
 
       results.push({
         lbcSearchId,
-        name: name.replace(/\s*\d+\+?$/, '').trim() || name,
+        // Le compteur colle parfois au titre : « Locations 23 ».
+        name: name.replace(/\s+\d+\+?$/, '').trim() || name,
         url,
-        category: card.querySelector('[class*="badge" i]')?.textContent?.trim() ?? null,
+        category: category && !GENERIC.test(category) ? category : null,
         itemCount: countMatch ? Number(countMatch[1]) : 0,
       });
     }
