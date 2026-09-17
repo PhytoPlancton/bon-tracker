@@ -176,7 +176,9 @@ function read(key) {
 function extractTunnelToken(answer) {
   const text = (answer ?? '').trim();
   if (!text) return '';
-  const match = text.match(/eyJ[A-Za-z0-9_\-=.]+/);
+  // Le jeton est du base64 : « + » et « / » en font partie, les omettre le
+  // tronquerait au premier d'entre eux.
+  const match = text.match(/eyJ[A-Za-z0-9+/=_\-.]+/);
   return match ? match[0] : text;
 }
 
