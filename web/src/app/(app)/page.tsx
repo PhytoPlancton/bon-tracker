@@ -55,7 +55,8 @@ export default function DashboardPage() {
         </div>
         <button
           onClick={() => void reload()}
-          aria-label="Rafraîchir"
+          aria-label="Recharger l’affichage"
+          title="Recharger l’affichage (ne lance pas de relevé)"
           className="rounded-full border border-ink-line bg-ink-soft p-2.5 active:scale-95"
         >
           <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" strokeWidth="1.8">

@@ -31,6 +31,51 @@ export default function SettingsPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
+  const [collecting, setCollecting] = useState(false);
+  const [collectMessage, setCollectMessage] = useState<string | null>(null);
+
+  /**
+   * Demande un relevé, puis surveille l'état jusqu'à ce qu'un nouveau passage
+   * soit enregistré. Un relevé complet prend plusieurs minutes : sans cette
+   * attente, l'écran semblerait ne rien faire.
+   */
+  async function collectNow() {
+    setCollecting(true);
+    setCollectMessage('Relevé lancé…');
+
+    const before = data?.lastRun?.finishedAt ?? null;
+    const response = await fetch('/api/refresh', { method: 'POST' });
+    const body = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      setCollectMessage(body.error ?? 'Le relevé n’a pas pu démarrer.');
+      setCollecting(false);
+      return;
+    }
+
+    const started = Date.now();
+    const timer = setInterval(async () => {
+      const fresh = await fetch('/api/status', { cache: 'no-store' })
+        .then((res) => res.json() as Promise<StatusResponse>)
+        .catch(() => null);
+
+      const done = fresh?.lastRun?.finishedAt && fresh.lastRun.finishedAt !== before;
+      // Le relevé continue peut-être, mais on cesse de l'attendre à l'écran.
+      const tooLong = Date.now() - started > 8 * 60 * 1000;
+
+      if (done || tooLong) {
+        clearInterval(timer);
+        setCollecting(false);
+        setCollectMessage(
+          done
+            ? `Terminé : ${fresh?.lastRun?.stats.seen ?? 0} annonces vues, ` +
+                `${fresh?.lastRun?.stats.priceChanges ?? 0} changement(s) de prix.`
+            : 'Le relevé prend plus de temps que prévu, il continue en arrière-plan.',
+        );
+        void reload();
+      }
+    }, 4000);
+  }
 
   async function submitSession(event: React.FormEvent) {
     event.preventDefault();
@@ -83,6 +128,15 @@ export default function SettingsPage() {
             }
           />
         </dl>
+
+        <button
+          onClick={() => void collectNow()}
+          disabled={collecting}
+          className="mt-4 w-full rounded-xl bg-accent px-4 py-3 text-sm font-semibold text-ink disabled:opacity-50"
+        >
+          {collecting ? 'Relevé en cours…' : 'Relever les prix maintenant'}
+        </button>
+        {collectMessage && <p className="mt-2 text-[12px] text-zinc-400">{collectMessage}</p>}
 
         {data?.lastRun && (
           <p className="mt-3 border-t border-ink-line pt-3 text-[11px] leading-relaxed text-zinc-600">

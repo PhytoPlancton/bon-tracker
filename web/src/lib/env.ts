@@ -27,4 +27,8 @@ export const env = {
   get workerToken() {
     return required('WORKER_TOKEN');
   },
+  /** Serveur de commandes du collecteur, sur le réseau interne de Docker. */
+  get workerUrl() {
+    return (process.env.WORKER_URL || 'http://worker:3001').replace(/\/$/, '');
+  },
 };

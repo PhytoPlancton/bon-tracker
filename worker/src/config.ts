@@ -21,6 +21,8 @@ export const config = {
   /** Toutes les 6 h par défaut, décalé pour éviter les heures rondes. */
   schedule: process.env.CRON_SCHEDULE || '17 */6 * * *',
   runOnStart: process.env.RUN_ON_START === 'true',
+  /** Port du serveur de commandes, joignable seulement depuis le réseau Docker. */
+  commandPort: Number(process.env.WORKER_PORT || 3001),
   /** Pause entre deux pages, pour ne pas marteler le site. */
   pageDelayMs: Number(process.env.PAGE_DELAY_MS || 4000),
 };

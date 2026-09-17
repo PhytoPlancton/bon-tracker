@@ -76,6 +76,13 @@ Format : [date] | ce qui a mal tourné | règle pour l'éviter
   afficher la structure réelle de la page ; une ligne dans la console d'un
   navigateur connecté coûte moins qu'un aller-retour de correction.
 
+- [2026-09-17] | Le bouton ↻ du tableau de bord rechargeait l'affichage, ce
+  que l'utilisateur prenait pour une collecte : rien dans l'app ne permettait
+  de déclencher un relevé, il fallait la ligne de commande. | Une action qui
+  ne fait pas ce que son icône laisse croire doit être nommée ; et toute
+  opération qu'on se surprend à lancer en ligne de commande plusieurs fois a
+  sa place dans l'interface.
+
 ## Règles permanentes du projet
 - Un seul client MongoDB, `maxPoolSize` bas : le quota de 500 connexions est
   partagé entre plusieurs applications.
