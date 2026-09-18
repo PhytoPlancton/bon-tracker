@@ -42,6 +42,8 @@ export interface Listing {
   lastSeenAt: Date;
   isActive: boolean;
   sources: ListingSource[];
+  /** Caractéristiques publiées avec l'annonce : puissance, année, kilométrage… */
+  attributes?: Record<string, string>;
 }
 
 export interface PricePoint {
@@ -89,4 +91,5 @@ export interface ScrapedListing {
   sellerType?: 'pro' | 'private' | null;
   location?: string | null;
   price: number | null;
+  attributes?: Record<string, string>;
 }

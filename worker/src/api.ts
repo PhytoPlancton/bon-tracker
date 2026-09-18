@@ -9,6 +9,12 @@ export interface ScrapedListing {
   sellerType?: 'pro' | 'private' | null;
   location?: string | null;
   price: number | null;
+  /**
+   * Caractéristiques telles que le site les publie : puissance, année,
+   * kilométrage, boîte. Relevées sans présumer lesquelles existent — c'est
+   * la seule base fiable pour comparer deux voitures entre elles.
+   */
+  attributes?: Record<string, string>;
 }
 
 export interface TrackedSearch {

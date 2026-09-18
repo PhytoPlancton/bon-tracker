@@ -58,6 +58,7 @@ export async function ingestListings(
             category: item.category ?? null,
             sellerType: item.sellerType ?? null,
             location: item.location ?? null,
+            ...(item.attributes ? { attributes: item.attributes } : {}),
             lastSeenAt: now,
             isActive: true,
             ...(item.price !== null ? { currentPrice: item.price } : {}),

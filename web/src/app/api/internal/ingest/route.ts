@@ -16,6 +16,7 @@ const listingSchema = z.object({
   sellerType: z.enum(['pro', 'private']).nullable().optional(),
   location: z.string().nullable().optional(),
   price: z.number().int().nonnegative().nullable(),
+  attributes: z.record(z.string().max(80)).optional(),
 });
 
 const schema = z.object({

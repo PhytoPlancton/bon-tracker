@@ -69,6 +69,7 @@ function harvest(node: unknown, accumulator: ScrapedListing[] = []): ScrapedList
         category: typeof record.category_name === 'string' ? record.category_name : null,
         sellerType: extractSellerType(record),
         location: extractLocation(record),
+        attributes: extractAttributes(record),
       });
     }
   }
@@ -85,6 +86,30 @@ function normalizePrice(value: unknown): number | null {
     if (digits) return Number(digits);
   }
   return null;
+}
+
+/**
+ * Reprend les caractéristiques publiées avec l'annonce.
+ *
+ * On ne choisit pas lesquelles retenir : le site en attache un nombre variable
+ * selon la catégorie, et celles qui comptent pour comparer deux voitures —
+ * puissance, année, kilométrage — ne portent pas toujours le nom attendu.
+ */
+function extractAttributes(record: Record<string, unknown>): Record<string, string> | undefined {
+  const raw = record.attributes;
+  if (!Array.isArray(raw)) return undefined;
+
+  const attributes: Record<string, string> = {};
+  for (const entry of raw) {
+    if (!entry || typeof entry !== 'object') continue;
+    const item = entry as Record<string, unknown>;
+    const key = typeof item.key === 'string' ? item.key : null;
+    const value = item.value ?? item.value_label;
+    if (!key || (typeof value !== 'string' && typeof value !== 'number')) continue;
+    attributes[key.slice(0, 40)] = String(value).slice(0, 80);
+  }
+
+  return Object.keys(attributes).length ? attributes : undefined;
 }
 
 function extractImage(record: Record<string, unknown>): string | null {

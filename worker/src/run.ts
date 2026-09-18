@@ -127,6 +127,7 @@ async function collectForUser(browser: Browser, user: CollectableUser): Promise<
 
     const favorites = await collectListings(page, `${LBC_ORIGIN}/favorites`);
     log(`[${label}] favoris : ${favorites.length} annonces`);
+    reportAttributes(label, favorites);
     if (favorites.length) {
       stats = add(stats, await ingest(user.uid, 'favorites', favorites));
     }
@@ -174,6 +175,33 @@ async function collectForUser(browser: Browser, user: CollectableUser): Promise<
     (cause) => log(`[${label}] état du relevé non remonté`, String(cause)),
   );
   log(`[${label}] terminé`, { status, ...stats });
+}
+
+/**
+ * Énumère les caractéristiques rencontrées, avec un exemple de valeur.
+ *
+ * Le site n'attache pas les mêmes à toutes les catégories, et rien ne dit
+ * d'avance sous quel nom figure la puissance ou le kilométrage. Les lire une
+ * fois vaut mieux que les supposer.
+ */
+function reportAttributes(label: string, listings: { attributes?: Record<string, string> }[]): void {
+  const seen = new Map<string, string>();
+  for (const listing of listings) {
+    for (const [key, value] of Object.entries(listing.attributes ?? {})) {
+      if (!seen.has(key)) seen.set(key, value);
+    }
+  }
+
+  if (!seen.size) {
+    log(`[${label}] aucune caractéristique structurée reçue`);
+    return;
+  }
+
+  const sample = [...seen.entries()]
+    .slice(0, 30)
+    .map(([key, value]) => `${key}=${value}`)
+    .join(' · ');
+  log(`[${label}] caractéristiques (${seen.size}) : ${sample}`);
 }
 
 function pause(ms: number): Promise<void> {
