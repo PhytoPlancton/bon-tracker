@@ -30,24 +30,49 @@ export async function loginToLeboncoin(
   const page = await context.newPage();
 
   try {
-    await page.goto(`${LBC_ORIGIN}/connexion`, {
+    // On n'écrit pas l'adresse du formulaire en dur : c'est un flux OAuth dont
+    // les paramètres changent à chaque visite. Ouvrir une page réservée aux
+    // membres fait produire au site lui-même le lien correct, comme pour un
+    // visiteur ordinaire.
+    await page.goto(`${LBC_ORIGIN}/favorites`, {
       waitUntil: 'domcontentloaded',
       timeout: 45_000,
     });
+    await dismissCookieBanner(page);
+
+    await page
+      .waitForURL(/auth\.leboncoin\.fr/, { timeout: 20_000 })
+      .catch(() => undefined);
     await dismissCookieBanner(page);
     await humanPause(page, 1200, 2200);
 
     if (await isBlocked(page)) {
       return { outcome: 'blocked', detail: 'Vérification anti-robot sur la page de connexion' };
     }
+    if (!/auth\.leboncoin\.fr/.test(page.url())) {
+      return {
+        outcome: 'unknown_form',
+        detail: `Pas de redirection vers la connexion (${page.url()})`,
+      };
+    }
 
     const emailFilled = await typeInto(
       page,
-      ['input[type="email"]', 'input[name="email"]', 'input[id*="email" i]'],
+      [
+        'input[type="email"]',
+        'input[name="email"]',
+        'input[id*="email" i]',
+        'input[autocomplete="username"]',
+        // Dernier recours : le premier champ de saisie visible du formulaire.
+        'form input:not([type="hidden"]):not([type="password"]):not([type="checkbox"])',
+      ],
       email,
     );
     if (!emailFilled) {
-      return { outcome: 'unknown_form', detail: 'Champ e-mail introuvable' };
+      return {
+        outcome: 'unknown_form',
+        detail: `Champ e-mail introuvable sur ${page.url()}`,
+      };
     }
 
     // Écran en deux temps : un bouton fait apparaître le champ mot de passe.
