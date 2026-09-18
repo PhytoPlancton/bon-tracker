@@ -183,10 +183,15 @@ async function readDom(page: Page): Promise<ScrapedListing[]> {
 
       const card = anchor.closest('article') ?? anchor;
       const text = (card.textContent ?? '').replace(/ | /g, ' ');
-      // Un seul prix par carte : plusieurs montants signalent une mention
-      // promotionnelle ou une mensualité, qu'on ne saurait pas distinguer.
-      const priceMatches = text.match(/(\d[\d\s\u202f\u00a0]{2,})\s*€/g) ?? [];
-      const priceMatch = priceMatches.length === 1 ? priceMatches[0].match(/(\d[\d\s\u202f\u00a0]{2,})/) : null;
+      // Un prix s'écrit par groupes de trois chiffres. Accepter n'importe
+      // quelle suite de chiffres et d'espaces faisait avaler ce qui précède :
+      // « 2013 · 28 990 € » devenait 201 328 990.
+      const priceMatches =
+        text.match(/(?:^|[^\d])(\d{1,3}(?:[\s\u202f\u00a0]\d{3})*)\s*€/g) ?? [];
+      const priceMatch =
+        priceMatches.length === 1
+          ? priceMatches[0].match(/(\d{1,3}(?:[\s\u202f\u00a0]\d{3})*)\s*€/)
+          : null;
       const image = card.querySelector('img');
       // Le site compose ses titres avec une classe « headline », observée sur
       // ses autres pages ; les balises de titre ne sont pas toujours employées.

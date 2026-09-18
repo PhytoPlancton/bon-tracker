@@ -106,7 +106,11 @@ for (const ghost of ghosts) {
 console.log(`\n${moved} document(s) rendus à ${owner.email}`);
 
 // --- Écarter les prix qu'aucune annonce ne peut porter ---------------------
-const MAX_PRICE = 5_000_000;
+//
+// Une lecture fautive concaténait l'année ou le kilométrage au prix : « 2013 ·
+// 28 990 € » devenait 201 328 990. Ces valeurs restent en base après
+// correction du collecteur, et faussent chaque médiane tant qu'on les garde.
+const MAX_PRICE = Number(process.env.MAX_PRICE || 500_000);
 const listings = db.collection('listings');
 const points = db.collection('price_points');
 
