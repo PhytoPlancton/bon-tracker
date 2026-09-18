@@ -28,12 +28,19 @@ export async function connectToChrome(): Promise<Browser> {
 
   const endpoint = `http://${address}:${config.chromePort}`;
   try {
-    return await chromium.connectOverCDP(endpoint, { timeout: 15_000 });
+    // Le rattachement énumère les onglets ouverts : quelques secondes ne
+    // suffisent pas sur un navigateur chargé, et l'échec ressemble alors à
+    // un Chrome absent alors qu'il répond.
+    return await chromium.connectOverCDP(endpoint, { timeout: 60_000 });
   } catch (cause) {
+    const detail = cause instanceof Error ? cause.message : String(cause);
+    // Distinguer les deux cas : un Chrome absent et un Chrome qui tarde
+    // appellent des gestes différents.
+    const reachable = /ws connected/i.test(detail);
     throw new NeedsManualSession(
-      `Chrome introuvable sur ${endpoint}. Lance start-chrome.cmd sur le PC et laisse la fenêtre ouverte. (${
-        cause instanceof Error ? cause.message : String(cause)
-      })`,
+      reachable
+        ? `Chrome répond sur ${endpoint} mais tarde à s'ouvrir. Ferme les onglets inutiles du Chrome dédié, puis relance. (${detail})`
+        : `Chrome introuvable sur ${endpoint}. Lance start-chrome.cmd sur le PC et laisse la fenêtre ouverte. (${detail})`,
     );
   }
 }
