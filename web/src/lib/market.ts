@@ -56,7 +56,7 @@ export interface MarketSegment {
   /** Vendeurs qui ont déjà cédé du terrain, plusieurs fois. */
   motivated: MarketListing[];
   /** Tous les prix du segment, pour situer chaque annonce d'un regard. */
-  prices: { lbcId: string; price: number }[];
+  prices: { lbcId: string; price: number; title: string; url: string }[];
 }
 
 export async function buildMarket(uid: string): Promise<MarketSegment[]> {
@@ -176,6 +176,8 @@ function buildSegment(
     prices: active.map((listing) => ({
       lbcId: listing.lbcId,
       price: listing.currentPrice as number,
+      title: listing.title,
+      url: listing.url,
     })),
   };
 }

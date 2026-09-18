@@ -37,7 +37,7 @@ interface Segment {
   lifespan: { median: number; sample: number } | null;
   deals: MarketListing[];
   motivated: MarketListing[];
-  prices: { lbcId: string; price: number }[];
+  prices: { lbcId: string; price: number; title: string; url: string }[];
 }
 
 export default function MarketPage() {
@@ -230,9 +230,10 @@ function Row({ listing, kind }: { listing: MarketListing; kind: 'deal' | 'motiva
       <div className="shrink-0 text-right">
         <div className="text-[14px] font-semibold text-white">{formatPrice(listing.price)}</div>
         {kind === 'deal' ? (
-          // L'écart porte le signe, jamais la couleur seule.
+          // Un écart au marché n'est pas une baisse de prix : la flèche est
+          // réservée aux évolutions dans le temps, sous peine de les confondre.
           <div className="text-[11px] font-medium text-down">
-            ↓ {formatPrice(Math.abs(listing.gap))} · {Math.round(Math.abs(listing.gapRatio) * 100)} %
+            {Math.round(Math.abs(listing.gapRatio) * 100)} % sous le marché
           </div>
         ) : (
           <div className="text-[11px] font-medium text-down">

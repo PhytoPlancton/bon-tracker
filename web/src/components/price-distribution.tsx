@@ -12,6 +12,8 @@ const PADDING = { left: 10, right: 10, top: 22, bottom: 20 };
 export interface PricePoint {
   lbcId: string;
   price: number;
+  title: string;
+  url: string;
 }
 
 /**
@@ -88,19 +90,34 @@ export function PriceDistribution({
           // Léger étagement vertical : sans lui, des prix voisins se cachent.
           const row = (index % 3) - 1;
           return (
-            <circle
+            <a
               key={point.lbcId}
-              cx={x(point.price)}
-              cy={(HEIGHT - PADDING.bottom + PADDING.top) / 2 + row * 9}
-              r={isHighlighted ? 6 : 4.5}
-              fill={isDeal ? DEAL : NORMAL}
-              fillOpacity={isHighlighted ? 1 : 0.85}
-              stroke={isHighlighted ? '#fff' : '#14161a'}
-              strokeWidth={isHighlighted ? 2 : 1.5}
-              onMouseEnter={() => setHover(point)}
-              onMouseLeave={() => setHover(null)}
-              onTouchStart={() => setHover(point)}
-            />
+              href={point.url}
+              target="_blank"
+              rel="noreferrer noopener"
+              aria-label={`${point.title} — ${formatPrice(point.price)}`}
+            >
+              {/* Cible tactile plus large que le point lui-même. */}
+              <circle
+                cx={x(point.price)}
+                cy={(HEIGHT - PADDING.bottom + PADDING.top) / 2 + row * 9}
+                r={12}
+                fill="transparent"
+                onMouseEnter={() => setHover(point)}
+                onMouseLeave={() => setHover(null)}
+                onTouchStart={() => setHover(point)}
+              />
+              <circle
+                cx={x(point.price)}
+                cy={(HEIGHT - PADDING.bottom + PADDING.top) / 2 + row * 9}
+                r={isHighlighted ? 6 : 4.5}
+                fill={isDeal ? DEAL : NORMAL}
+                fillOpacity={isHighlighted ? 1 : 0.85}
+                stroke={isHighlighted ? '#fff' : '#14161a'}
+                strokeWidth={isHighlighted ? 2 : 1.5}
+                className="pointer-events-none"
+              />
+            </a>
           );
         })}
 
@@ -119,10 +136,11 @@ export function PriceDistribution({
 
       {hover && (
         <div
-          className="pointer-events-none absolute top-0 rounded-lg border border-ink-line bg-ink/95 px-2 py-1 text-[11px] font-medium text-zinc-100 shadow"
-          style={{ left: Math.min(Math.max(x(hover.price) - 40, 0), Math.max(width - 88, 0)) }}
+          className="pointer-events-none absolute top-0 max-w-[70%] rounded-lg border border-ink-line bg-ink/95 px-2 py-1 shadow"
+          style={{ left: Math.min(Math.max(x(hover.price) - 60, 0), Math.max(width - 140, 0)) }}
         >
-          {formatPrice(hover.price)}
+          <div className="text-[11px] font-semibold text-zinc-100">{formatPrice(hover.price)}</div>
+          <div className="truncate text-[10px] text-zinc-500">{hover.title}</div>
         </div>
       )}
     </div>

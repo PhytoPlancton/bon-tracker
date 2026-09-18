@@ -113,6 +113,13 @@ Format : [date] | ce qui a mal tourné | règle pour l'éviter
   fautive peut contenir n'importe quoi, une adresse correcte a une forme
   connue.
 
+- [2026-09-18] | La même flèche descendante servait à deux notions : une
+  baisse de prix dans le temps, et un écart au prix médian du marché.
+  L'utilisateur a lu « baisse de 74 % » là où il fallait comprendre « 74 %
+  sous le marché ». | Un signe ne vaut que pour une chose. Une évolution et
+  une comparaison ne peuvent pas partager la même symbolique, même quand les
+  deux sont favorables.
+
 ## Règles permanentes du projet
 - Un seul client MongoDB, `maxPoolSize` bas : le quota de 500 connexions est
   partagé entre plusieurs applications.
