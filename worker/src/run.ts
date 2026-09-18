@@ -71,6 +71,7 @@ export async function runOnce(): Promise<void> {
     // navigateur chargé : sans cette ligne, l'attente passe pour une panne.
     log(`Rattachement au Chrome dédié (${config.chromeHost}:${config.chromePort})…`);
     browser = await connectToChrome();
+    await closeLeftovers(browser);
     log(`Connecté · ${users.length} compte(s) à relever`);
 
     for (const [index, user] of users.entries()) {
@@ -182,6 +183,27 @@ async function collectForUser(browser: Browser, user: CollectableUser): Promise<
     (cause) => log(`[${label}] état du relevé non remonté`, String(cause)),
   );
   log(`[${label}] terminé`, { status, ...stats });
+}
+
+/**
+ * Referme les contextes laissés par un relevé interrompu.
+ *
+ * Chaque compte travaille dans son propre contexte, refermé en fin de
+ * parcours. Un arrêt brutal en laisse un derrière lui, et ils s'accumulent
+ * dans le navigateur jusqu'à ce que le seul fait de les énumérer dépasse le
+ * délai de rattachement : le collecteur semble alors ne plus trouver Chrome.
+ *
+ * Le premier contexte est celui de l'utilisateur, avec ses onglets et sa
+ * session : on n'y touche pas.
+ */
+async function closeLeftovers(browser: Browser): Promise<void> {
+  const [, ...extra] = browser.contexts();
+  if (!extra.length) return;
+
+  for (const context of extra) {
+    await context.close().catch(() => undefined);
+  }
+  log(`${extra.length} contexte(s) de navigation oubliés refermés`);
 }
 
 /**
