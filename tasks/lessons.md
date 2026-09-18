@@ -90,6 +90,15 @@ Format : [date] | ce qui a mal tourné | règle pour l'éviter
   page visée existe. Et pour atteindre un formulaire, suivre la redirection
   que le site propose plutôt que d'écrire son adresse en dur.
 
+- [2026-09-18] | Index unique posé sur un champ que les documents existants
+  n'avaient pas encore, et créé avant l'étape qui le remplit : deux comptes
+  sans identifiant suffisaient à faire échouer la construction de l'index, et
+  avec elle toute requête à la base. L'application répondait « connexion
+  impossible » sans autre indice. | Remplir les données avant de poser les
+  index qui les contraignent ; restreindre une unicité aux documents qui ont
+  la valeur ; et ne jamais laisser un index rater bloquer le service — une
+  requête lente vaut mieux qu'une panne.
+
 ## Règles permanentes du projet
 - Un seul client MongoDB, `maxPoolSize` bas : le quota de 500 connexions est
   partagé entre plusieurs applications.

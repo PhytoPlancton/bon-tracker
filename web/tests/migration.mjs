@@ -42,11 +42,21 @@ const client = new MongoClient(uri);
 await client.connect();
 const db = client.db(DB);
 
-await db.collection('users').insertOne({
-  email: EMAIL,
-  passwordHash: hash,
-  createdAt: new Date(now - 4 * day),
-});
+await db.collection('users').insertMany([
+  {
+    email: EMAIL,
+    passwordHash: hash,
+    createdAt: new Date(now - 4 * day),
+  },
+  // Compte fantôme d'une adresse mal saisie : deux documents sans identifiant
+  // interne suffisaient à faire échouer l'index qui les distingue, et avec lui
+  // toute requête à la base.
+  {
+    email: 'proprietaire 4@example.com',
+    passwordHash: hash,
+    createdAt: new Date(now - 3 * day),
+  },
+]);
 
 await db.collection('listings').insertMany(
   Array.from({ length: 320 }, (_, i) => ({
@@ -158,12 +168,21 @@ try {
   const users = await fetch(`${BASE}/api/internal/users`, {
     headers: { 'x-worker-token': 'jeton-de-test' },
   }).then((r) => r.json());
-  check('un compte à relever', users.users?.length === 1, users.users?.length);
-  check('identifiant interne attribué', Boolean(users.users?.[0]?.uid), users.users?.[0]?.uid);
+  check('les deux comptes sont relevables', users.users?.length === 2, users.users?.length);
+  check(
+    'chacun a reçu son identifiant',
+    users.users?.every((u) => typeof u.uid === 'string' && u.uid.length > 10),
+    users.users?.map((u) => u.uid),
+  );
+  check(
+    'identifiants distincts',
+    new Set(users.users?.map((u) => u.uid)).size === users.users?.length,
+    users.users?.map((u) => u.uid),
+  );
   check(
     'mot de passe leboncoin récupérable',
-    users.users?.[0]?.password === LBC_PASSWORD,
-    users.users?.[0]?.password ? '(présent)' : '(absent)',
+    users.users?.some((u) => u.password === LBC_PASSWORD),
+    users.users?.some((u) => u.password) ? '(présent)' : '(absent)',
   );
 
   console.log('\nRelance : rien ne doit bouger');

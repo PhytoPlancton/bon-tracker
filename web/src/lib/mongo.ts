@@ -27,16 +27,7 @@ function getClient(): MongoClient {
 }
 
 export async function getDb(): Promise<Db> {
-  const client = getClient();
-  const db = client.db(env.mongoDb);
-  if (!globalForMongo._mongoIndexes) {
-    globalForMongo._mongoIndexes = ensureIndexes(db).catch((error) => {
-      globalForMongo._mongoIndexes = undefined;
-      throw error;
-    });
-  }
-  await globalForMongo._mongoIndexes;
-  return db;
+  return getClient().db(env.mongoDb);
 }
 
 /**
@@ -48,6 +39,7 @@ async function ensureBaselineOnce(): Promise<void> {
   if (!globalForMongo._mongoBaseline) {
     globalForMongo._mongoBaseline = import('./bootstrap')
       .then((module) => module.ensureBaseline())
+      .then(async () => ensureIndexes(await getDb()))
       .catch((error) => {
         globalForMongo._mongoBaseline = undefined;
         throw error;
@@ -59,16 +51,42 @@ async function ensureBaselineOnce(): Promise<void> {
 async function ensureIndexes(db: Db): Promise<void> {
   // Les identifiants du site ne sont uniques qu'au sein d'un compte : deux
   // personnes peuvent suivre la même annonce, chacune avec son historique.
-  await Promise.all([
-    db.collection('users').createIndex({ email: 1 }, { unique: true }),
-    db.collection('users').createIndex({ uid: 1 }, { unique: true }),
-    db.collection('secrets').createIndex({ key: 1 }, { unique: true }),
-    db.collection('listings').createIndex({ uid: 1, lbcId: 1 }, { unique: true }),
-    db.collection('listings').createIndex({ uid: 1, isActive: 1, lastSeenAt: -1 }),
-    db.collection('price_points').createIndex({ uid: 1, lbcId: 1, observedAt: 1 }),
-    db.collection('searches').createIndex({ uid: 1, lbcSearchId: 1 }, { unique: true }),
-    db.collection('runs').createIndex({ uid: 1, startedAt: -1 }),
-  ]);
+  //
+  // L'unicité de l'identifiant interne ne porte que sur les documents qui en
+  // ont un : un index unique ordinaire refuserait deux valeurs absentes, et
+  // ferait échouer toute requête sur une base d'avant le cloisonnement.
+  const wanted: [string, Parameters<Db['collection']>[0], object, object][] = [
+    ['users', 'users', { email: 1 }, { unique: true }],
+    ['users', 'users', { uid: 1 }, { unique: true, partialFilterExpression: { uid: { $type: 'string' } } }],
+    ['secrets', 'secrets', { key: 1 }, { unique: true }],
+    ['listings', 'listings', { uid: 1, lbcId: 1 }, { unique: true }],
+    ['listings', 'listings', { uid: 1, isActive: 1, lastSeenAt: -1 }, {}],
+    ['price_points', 'price_points', { uid: 1, lbcId: 1, observedAt: 1 }, {}],
+    ['searches', 'searches', { uid: 1, lbcSearchId: 1 }, { unique: true }],
+    ['runs', 'runs', { uid: 1, startedAt: -1 }, {}],
+  ];
+
+  for (const [, collection, keys, options] of wanted) {
+    await db
+      .collection(collection)
+      .createIndex(keys as never, options as never)
+      .catch(async (error) => {
+        // Un index déjà présent sous d'autres options bloque la création :
+        // on retire l'ancien et on retente une fois.
+        const name = Object.keys(keys)
+          .map((key) => `${key}_${(keys as Record<string, number>)[key]}`)
+          .join('_');
+        await db.collection(collection).dropIndex(name).catch(() => undefined);
+        await db
+          .collection(collection)
+          .createIndex(keys as never, options as never)
+          .catch(() => {
+            // L'application reste utilisable sans cet index, seulement moins
+            // rapide : mieux vaut une lenteur qu'une panne.
+            console.warn(`[base] index ${collection}.${name} non créé :`, error?.message ?? error);
+          });
+      });
+  }
 }
 
 export async function collections() {

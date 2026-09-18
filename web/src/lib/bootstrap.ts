@@ -55,6 +55,16 @@ export async function ensureBaseline(): Promise<void> {
     }
   }
 
+  // Un compte a pu être créé sous une adresse fautive avant que la saisie ne
+  // soit contrôlée : chacun reçoit son identifiant, faute de quoi l'index qui
+  // les distingue ne peut pas exister.
+  const withoutUid = await users
+    .find({ uid: { $exists: false } }, { projection: { _id: 1 } })
+    .toArray();
+  for (const doc of withoutUid) {
+    await users.updateOne({ _id: doc._id }, { $set: { uid: randomUUID() } });
+  }
+
   // Rattacher l'historique existant au plus ancien compte, le seul qui
   // pouvait l'avoir collecté.
   const orphan = await listings.findOne({ uid: { $exists: false } }, { projection: { _id: 1 } });
