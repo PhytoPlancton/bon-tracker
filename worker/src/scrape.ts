@@ -59,7 +59,8 @@ function harvest(node: unknown, accumulator: ScrapedListing[] = []): ScrapedList
 
   if ((typeof id === 'number' || typeof id === 'string') && typeof title === 'string') {
     const lbcId = String(id);
-    if (/^\d{6,}$/.test(lbcId)) {
+    // Un titre vide trahit un objet de service, pas une annonce.
+    if (/^\d{6,}$/.test(lbcId) && title.trim().length > 2) {
       accumulator.push({
         lbcId,
         title: title.trim().slice(0, 300),
@@ -78,13 +79,35 @@ function harvest(node: unknown, accumulator: ScrapedListing[] = []): ScrapedList
   return accumulator;
 }
 
+/** Au-delà, ce n'est plus un prix d'annonce mais une valeur mal lue. */
+const MAX_PRICE = 5_000_000;
+
+/**
+ * Ramène un prix à un nombre, ou renonce.
+ *
+ * Les pages portent aussi des plages de filtre — « 200 € à 322 000 € » — dont
+ * les chiffres mis bout à bout donneraient 200 322 000. Mieux vaut ignorer un
+ * prix douteux que fausser toutes les médianes d'un segment.
+ */
 function normalizePrice(value: unknown): number | null {
-  if (typeof value === 'number' && Number.isFinite(value)) return Math.round(value);
-  if (Array.isArray(value) && value.length) return normalizePrice(value[0]);
-  if (typeof value === 'string') {
-    const digits = value.replace(/[^\d]/g, '');
-    if (digits) return Number(digits);
+  if (typeof value === 'number') {
+    return Number.isFinite(value) && value > 0 && value <= MAX_PRICE ? Math.round(value) : null;
   }
+
+  if (Array.isArray(value)) {
+    // Un tableau à plusieurs valeurs décrit un intervalle, pas un prix.
+    return value.length === 1 ? normalizePrice(value[0]) : null;
+  }
+
+  if (typeof value === 'string') {
+    const groups = value.match(/\d[\d\s.,\u202f\u00a0]*/g) ?? [];
+    if (groups.length !== 1) return null;
+    const digits = groups[0].replace(/[^\d]/g, '');
+    if (!digits) return null;
+    const price = Number(digits);
+    return price > 0 && price <= MAX_PRICE ? price : null;
+  }
+
   return null;
 }
 
@@ -160,19 +183,30 @@ async function readDom(page: Page): Promise<ScrapedListing[]> {
 
       const card = anchor.closest('article') ?? anchor;
       const text = (card.textContent ?? '').replace(/ | /g, ' ');
-      const priceMatch = text.match(/(\d[\d\s]{2,})\s*€/);
+      // Un seul prix par carte : plusieurs montants signalent une mention
+      // promotionnelle ou une mensualité, qu'on ne saurait pas distinguer.
+      const priceMatches = text.match(/(\d[\d\s\u202f\u00a0]{2,})\s*€/g) ?? [];
+      const priceMatch = priceMatches.length === 1 ? priceMatches[0].match(/(\d[\d\s\u202f\u00a0]{2,})/) : null;
       const image = card.querySelector('img');
+      // Le site compose ses titres avec une classe « headline », observée sur
+      // ses autres pages ; les balises de titre ne sont pas toujours employées.
       const title =
-        card.querySelector('[data-test-id="adcard-title"], h2, h3')?.textContent?.trim() ||
+        card
+          .querySelector('[data-test-id="adcard-title"], [class*="headline" i], h2, h3')
+          ?.textContent?.trim() ||
         anchor.getAttribute('title') ||
         image?.getAttribute('alt') ||
-        `Annonce ${lbcId}`;
+        '';
+
+      // Sans titre, l'annonce serait inexploitable : mieux vaut ne pas la
+      // compter que de la ranger sous un numéro.
+      if (title.trim().length <= 2) continue;
 
       results.push({
         lbcId,
         title: title.slice(0, 300),
         url: href.startsWith('http') ? href : origin + href,
-        price: priceMatch ? Number(priceMatch[1].replace(/\s/g, '')) : null,
+        price: priceMatch ? Number(priceMatch[1].replace(/[^\d]/g, '')) : null,
         imageUrl: image?.getAttribute('src') ?? null,
         category: null,
         sellerType: text.includes('Pro') ? 'pro' : null,

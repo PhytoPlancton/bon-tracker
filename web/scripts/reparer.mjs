@@ -105,6 +105,39 @@ for (const ghost of ghosts) {
 
 console.log(`\n${moved} document(s) rendus à ${owner.email}`);
 
+// --- Écarter les prix qu'aucune annonce ne peut porter ---------------------
+const MAX_PRICE = 5_000_000;
+const listings = db.collection('listings');
+const points = db.collection('price_points');
+
+const badPoints = await points.deleteMany({ price: { $gt: MAX_PRICE } });
+if (badPoints.deletedCount) {
+  console.log(`${badPoints.deletedCount} point(s) de prix hors d'échelle supprimés`);
+}
+
+// Une annonce dont il ne reste aucun prix plausible n'a rien à dire du marché.
+const suspicious = await listings.find({ currentPrice: { $gt: MAX_PRICE } }).toArray();
+let dropped = 0;
+for (const listing of suspicious) {
+  const last = await points
+    .find({ uid: listing.uid, lbcId: listing.lbcId })
+    .sort({ observedAt: -1 })
+    .limit(1)
+    .next();
+
+  if (last) {
+    await listings.updateOne({ _id: listing._id }, { $set: { currentPrice: last.price } });
+  } else {
+    await listings.deleteOne({ _id: listing._id });
+    dropped += 1;
+  }
+}
+if (suspicious.length) {
+  console.log(
+    `${suspicious.length} annonce(s) au prix hors d'échelle corrigées, dont ${dropped} supprimées faute de prix valide`,
+  );
+}
+
 console.log('\n─────────────────────────────────────────');
 console.log('  Après réparation');
 console.log('─────────────────────────────────────────\n');

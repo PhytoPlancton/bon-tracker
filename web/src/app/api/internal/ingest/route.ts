@@ -15,7 +15,8 @@ const listingSchema = z.object({
   category: z.string().nullable().optional(),
   sellerType: z.enum(['pro', 'private']).nullable().optional(),
   location: z.string().nullable().optional(),
-  price: z.number().int().nonnegative().nullable(),
+  // Au-delà, c'est une valeur mal lue, pas un prix d'annonce.
+  price: z.number().int().positive().max(5_000_000).nullable(),
   attributes: z.record(z.string().max(80)).optional(),
 });
 
