@@ -154,8 +154,14 @@ async function collectForUser(browser: Browser, user: CollectableUser): Promise<
       await pause(config.pageDelayMs);
       const listings = await collectListings(page, search.url);
       log(`[${label}] « ${search.name} » : ${listings.length} annonces`);
+
       if (listings.length) {
         stats = add(stats, await ingest(user.uid, `search:${search.lbcSearchId}`, listings));
+      } else {
+        // Une recherche sans résultat est suspecte : elle en avait la veille.
+        // Garder la page permet de voir ce que le collecteur avait devant lui.
+        const shot = await captureDiagnostic(page, `vide-${search.lbcSearchId}`).catch(() => null);
+        if (shot) log(`[${label}] page conservée : ${shot}`);
       }
       trackedSearchIds.push(search.lbcSearchId);
     }
