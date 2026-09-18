@@ -60,14 +60,18 @@ export async function runOnce(): Promise<void> {
 
   let browser: Browser | null = null;
   try {
+    log('Démarrage du relevé');
     const { users } = await fetchUsers();
     if (!users.length) {
       log('Aucun compte à relever');
       return;
     }
 
+    // Le rattachement peut demander plusieurs dizaines de secondes sur un
+    // navigateur chargé : sans cette ligne, l'attente passe pour une panne.
+    log(`Rattachement au Chrome dédié (${config.chromeHost}:${config.chromePort})…`);
     browser = await connectToChrome();
-    log(`${users.length} compte(s) à relever`);
+    log(`Connecté · ${users.length} compte(s) à relever`);
 
     for (const [index, user] of users.entries()) {
       if (index > 0) await pause(config.pageDelayMs * 2);
@@ -97,6 +101,7 @@ async function collectForUser(browser: Browser, user: CollectableUser): Promise<
     );
     const page = await context.newPage();
 
+    log(`[${label}] vérification de la session…`);
     let state = await checkSession(page);
 
     if (state !== 'logged_in') {
@@ -125,6 +130,7 @@ async function collectForUser(browser: Browser, user: CollectableUser): Promise<
       log(`[${label}] connexion réussie`);
     }
 
+    log(`[${label}] lecture des favoris…`);
     const favorites = await collectListings(page, `${LBC_ORIGIN}/favorites`);
     log(`[${label}] favoris : ${favorites.length} annonces`);
     reportAttributes(label, favorites);
@@ -142,6 +148,7 @@ async function collectForUser(browser: Browser, user: CollectableUser): Promise<
     }
 
     const { searches } = await fetchTrackedSearches(user.uid);
+    if (searches.length) log(`[${label}] ${searches.length} recherche(s) à parcourir…`);
     for (const search of searches) {
       await pause(config.pageDelayMs);
       const listings = await collectListings(page, search.url);
