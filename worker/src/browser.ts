@@ -57,22 +57,54 @@ export function mainContext(browser: Browser): BrowserContext {
   return existing;
 }
 
-/** Refuse le pistage : c'est le choix le plus respectueux et il passe le bandeau. */
-export async function dismissCookieBanner(page: Page): Promise<void> {
+/**
+ * Refuse le pistage, et surtout dégage la page.
+ *
+ * Ce bandeau recouvre le contenu : tant qu'il est là, aucune annonce n'est
+ * lisible. Le refus se présente tantôt en bouton, tantôt en lien, et arrive
+ * parfois après le premier affichage — on ratisse donc large, et on réessaie.
+ */
+export async function dismissCookieBanner(page: Page): Promise<boolean> {
   const candidates = [
     '#didomi-notice-disagree-button',
+    '[id*="disagree" i]',
+    '[aria-label*="Continuer sans accepter" i]',
+    // Le refus n'est pas toujours un bouton : sur certaines pages c'est un lien.
+    ':is(button, a, span, div)[role="button"]:has-text("Continuer sans accepter")',
     'button:has-text("Continuer sans accepter")',
+    'a:has-text("Continuer sans accepter")',
+    'button:has-text("Tout refuser")',
     'button:has-text("Refuser")',
   ];
 
-  for (const selector of candidates) {
-    const button = page.locator(selector).first();
-    if (await button.isVisible({ timeout: 1500 }).catch(() => false)) {
-      await button.click({ timeout: 3000 }).catch(() => undefined);
-      await page.waitForTimeout(600);
-      return;
+  // Le bandeau peut surgir après le chargement : deux passes valent mieux
+  // qu'un seul essai trop tôt.
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    for (const selector of candidates) {
+      const target = page.locator(selector).first();
+      if (await target.isVisible({ timeout: 1200 }).catch(() => false)) {
+        await target.click({ timeout: 4000 }).catch(() => undefined);
+        await page.waitForTimeout(800);
+        return true;
+      }
     }
+    await page.waitForTimeout(1500);
   }
+
+  return false;
+}
+
+/** Le bandeau masque-t-il encore le contenu ? */
+export async function consentBannerVisible(page: Page): Promise<boolean> {
+  for (const selector of ['#didomi-popup', '[id*="didomi-notice"]', '[class*="didomi-popup"]']) {
+    const visible = await page
+      .locator(selector)
+      .first()
+      .isVisible({ timeout: 800 })
+      .catch(() => false);
+    if (visible) return true;
+  }
+  return false;
 }
 
 export type SessionState = 'logged_in' | 'logged_out' | 'challenged';

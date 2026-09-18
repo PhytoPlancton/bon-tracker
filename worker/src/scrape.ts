@@ -1,7 +1,7 @@
 import type { Page, Response } from 'playwright';
 import { config, LBC_ORIGIN } from './config.js';
 import type { ScrapedListing } from './api.js';
-import { dismissCookieBanner } from './browser.js';
+import { consentBannerVisible, dismissCookieBanner } from './browser.js';
 
 /**
  * Deux voies d'extraction, dans cet ordre :
@@ -30,6 +30,14 @@ export async function collectListings(page: Page, url: string): Promise<ScrapedL
   try {
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45_000 });
     await dismissCookieBanner(page);
+
+    // S'il tient encore, le contenu reste masqué : insister vaut mieux que
+    // rapporter une page vide.
+    if (await consentBannerVisible(page)) {
+      await page.waitForTimeout(1500);
+      await dismissCookieBanner(page);
+    }
+
     await autoScroll(page);
     await page.waitForTimeout(1500);
 
