@@ -65,20 +65,44 @@ export async function ensureBaseline(): Promise<void> {
     await users.updateOne({ _id: doc._id }, { $set: { uid: randomUUID() } });
   }
 
-  // Rattacher l'historique existant au plus ancien compte, le seul qui
-  // pouvait l'avoir collecté.
+  // Le compte configuré est le propriétaire légitime : c'est le sien qui
+  // relevait jusqu'ici. Se fier au plus ancien attribuerait tout l'historique
+  // à un compte né d'une adresse mal saisie, et laisserait le vrai vide.
+  const configured = email ? await users.findOne({ email }, { projection: { uid: 1 } }) : null;
+  const fallback = await users.find({}, { projection: { uid: 1 } }).sort({ createdAt: 1 }).next();
+  const ownerUid = configured?.uid ?? fallback?.uid;
+  if (!ownerUid) return;
+
+  const collections_ = [listings, pricePoints, searches, runs];
+
   const orphan = await listings.findOne({ uid: { $exists: false } }, { projection: { _id: 1 } });
-  if (!orphan) return;
+  if (orphan) {
+    await Promise.all(
+      collections_.map((collection) =>
+        collection.updateMany({ uid: { $exists: false } }, { $set: { uid: ownerUid } }),
+      ),
+    );
+  }
 
-  const owner = await users.find({}, { projection: { uid: 1 } }).sort({ createdAt: 1 }).next();
-  if (!owner?.uid) return;
+  // Une adresse contenant une espace ne peut venir que d'une saisie fautive :
+  // ce compte n'a jamais rien collecté, et ce qu'on lui a attribué revient au
+  // compte configuré.
+  if (configured?.uid) {
+    const ghosts = await users
+      .find({ email: { $regex: /\s/ } }, { projection: { uid: 1, email: 1 } })
+      .toArray();
 
-  await Promise.all([
-    listings.updateMany({ uid: { $exists: false } }, { $set: { uid: owner.uid } }),
-    pricePoints.updateMany({ uid: { $exists: false } }, { $set: { uid: owner.uid } }),
-    searches.updateMany({ uid: { $exists: false } }, { $set: { uid: owner.uid } }),
-    runs.updateMany({ uid: { $exists: false } }, { $set: { uid: owner.uid } }),
-  ]);
+    for (const ghost of ghosts) {
+      if (!ghost.uid || ghost.uid === configured.uid) continue;
+      for (const collection of collections_) {
+        await collection
+          .updateMany({ uid: ghost.uid }, { $set: { uid: configured.uid } })
+          // Un même identifiant des deux côtés : l'original prime, on laisse.
+          .catch(() => undefined);
+      }
+      await users.deleteOne({ uid: ghost.uid });
+    }
+  }
 }
 
 /** Conservé sous son ancien nom pour les appels existants. */

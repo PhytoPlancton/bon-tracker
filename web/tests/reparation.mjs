@@ -1,10 +1,10 @@
 /**
- * Reproduit une installation d'avant le cloisonnement — un compte sans
- * identifiant interne, des données sans propriétaire — et vérifie qu'après
- * démarrage tout est retrouvé à sa place.
+ * Une première migration a pu désigner le mauvais propriétaire : les données
+ * portent alors l'identifiant d'un compte né d'une adresse mal saisie, et le
+ * compte légitime paraît vide. Ce test vérifie qu'elles lui reviennent.
  */
 import { spawn } from 'node:child_process';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
@@ -12,12 +12,15 @@ const { MongoMemoryServer } = require('mongodb-memory-server');
 const bcrypt = require('bcryptjs');
 const { MongoClient } = require('mongodb');
 
-const PORT = 3555;
+const PORT = 3888;
 const BASE = `http://127.0.0.1:${PORT}`;
-const DB = 'bon_tracker_migration';
+const DB = 'bon_tracker_reparation';
 const EMAIL = 'proprietaire@example.com';
-const PASSWORD = 'mon-mot-de-passe-actuel';
-const LBC_PASSWORD = 'mot-de-passe-leboncoin';
+const PASSWORD = 'mon-mot-de-passe';
+const GHOST_UID = randomUUID();
+const GOOD_UID = randomUUID();
+const day = 86_400_000;
+const now = Date.now();
 
 let passed = 0;
 let failed = 0;
@@ -33,33 +36,20 @@ const check = (label, ok, detail) => {
 
 const mongo = await MongoMemoryServer.create();
 const uri = mongo.getUri();
-const day = 24 * 60 * 60 * 1000;
-const now = Date.now();
-
-// --- Base telle qu'elle existe avant la mise à jour -------------------------
-const hash = await bcrypt.hash(PASSWORD, 10);
 const client = new MongoClient(uri);
 await client.connect();
 const db = client.db(DB);
+const hash = await bcrypt.hash(PASSWORD, 10);
 
+// État après une migration qui a choisi le mauvais propriétaire.
 await db.collection('users').insertMany([
-  // Compte fantôme d'une adresse mal saisie, créé avant le bon : deux
-  // documents sans identifiant interne faisaient échouer l'index qui les
-  // distingue, et le plus ancien héritait de tout l'historique.
-  {
-    email: 'proprietaire 4@example.com',
-    passwordHash: hash,
-    createdAt: new Date(now - 5 * day),
-  },
-  {
-    email: EMAIL,
-    passwordHash: hash,
-    createdAt: new Date(now - 4 * day),
-  },
+  { uid: GHOST_UID, email: 'proprietaire 4@example.com', passwordHash: hash, lbcPassword: null, lbcSession: null, lbcStatus: 'ok', lbcCheckedAt: null, createdAt: new Date(now - 5 * day) },
+  { uid: GOOD_UID, email: EMAIL, passwordHash: hash, lbcPassword: null, lbcSession: null, lbcStatus: 'ok', lbcCheckedAt: null, createdAt: new Date(now - 4 * day) },
 ]);
 
 await db.collection('listings').insertMany(
   Array.from({ length: 320 }, (_, i) => ({
+    uid: GHOST_UID,
     lbcId: String(2900000000 + i),
     title: `Annonce ${i}`,
     url: `https://www.leboncoin.fr/ad/voitures/${2900000000 + i}`,
@@ -71,41 +61,37 @@ await db.collection('listings').insertMany(
     firstSeenAt: new Date(now - 2 * day),
     lastSeenAt: new Date(now),
     isActive: true,
-    sources: i % 3 === 0 ? ['favorites'] : ['search:a1b2c3d4'],
+    sources: ['favorites'],
   })),
 );
-
-await db.collection('price_points').insertMany([
-  ...Array.from({ length: 320 }, (_, i) => ({
+await db.collection('price_points').insertMany(
+  Array.from({ length: 320 }, (_, i) => ({
+    uid: GHOST_UID,
     lbcId: String(2900000000 + i),
-    price: 21000 + i,
+    price: 20000 + i,
     observedAt: new Date(now - 2 * day),
   })),
-  // Une baisse sur la première annonce : son graphe doit garder deux points.
-  { lbcId: '2900000000', price: 20000, observedAt: new Date(now - day) },
-]);
-
+);
 await db.collection('searches').insertOne({
-  lbcSearchId: 'a1b2c3d4',
+  uid: GHOST_UID,
+  lbcSearchId: 'seg',
   name: '981 - Boxster 2012-2016',
-  url: 'https://www.leboncoin.fr/recherche?text=boxster',
-  details: 'PORSCHE · Boxster · 2012 - 2016',
+  url: 'https://www.leboncoin.fr/recherche?x=1',
+  details: null,
   tracked: true,
   lastRunAt: new Date(now - day),
   itemCount: 32,
 });
-
 await db.collection('runs').insertOne({
+  uid: GHOST_UID,
   startedAt: new Date(now - day),
-  finishedAt: new Date(now - day + 60000),
+  finishedAt: new Date(now - day),
   status: 'ok',
   stats: { seen: 320, created: 185, priceChanges: 1, deactivated: 0 },
   error: null,
 });
-
 await client.close();
 
-// --- Démarrage de la version cloisonnée -------------------------------------
 const server = spawn('node', ['server.js'], {
   cwd: new URL('../.next/standalone', import.meta.url).pathname,
   env: {
@@ -118,7 +104,6 @@ const server = spawn('node', ['server.js'], {
     WORKER_TOKEN: 'jeton-de-test',
     ADMIN_EMAIL: EMAIL,
     ADMIN_PASSWORD_HASH_B64: Buffer.from(hash, 'utf8').toString('base64'),
-    LBC_PASSWORD_B64: Buffer.from(LBC_PASSWORD, 'utf8').toString('base64'),
     NODE_ENV: 'production',
   },
   stdio: ['ignore', 'pipe', 'pipe'],
@@ -131,7 +116,7 @@ server.stderr.on('data', (c) => {
 await waitForServer();
 
 try {
-  console.log('\nConnexion avec le mot de passe d’avant');
+  console.log('\nLe compte légitime retrouve ses données');
   const login = await fetch(`${BASE}/api/auth/login`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -140,50 +125,25 @@ try {
   check('connexion acceptée', login.status === 200, login.status);
   const cookie = (login.headers.get('set-cookie') ?? '').split(';')[0];
 
-  console.log('\nDonnées retrouvées');
   const list = await get('/api/listings', cookie);
-  check('320 annonces présentes', list.listings?.length === 320, list.listings?.length);
-
-  const first = list.listings?.find((l) => l.lbcId === '2900000000');
-  check('prix courant conservé', first?.currentPrice === 20000, first?.currentPrice);
-  check('prix initial conservé', first?.initialPrice === 21000, first?.initialPrice);
-  check('changement de prix compté', first?.priceChangeCount === 1, first?.priceChangeCount);
+  check('320 annonces récupérées', list.listings?.length === 320, list.listings?.length);
 
   const detail = await get('/api/listings/2900000000', cookie);
-  check('historique à deux points', detail.listing?.history?.length === 2, detail.listing?.history);
+  check('historique suivi', detail.listing?.history?.length === 1, detail.listing?.history);
 
   const searches = await get('/api/searches', cookie);
-  check('recherche retrouvée', searches.searches?.length === 1, searches.searches?.length);
+  check('recherche récupérée', searches.searches?.length === 1, searches.searches?.length);
   check('toujours suivie', searches.searches?.[0]?.tracked === true, searches.searches?.[0]);
 
   const status = await get('/api/status', cookie);
-  check('dernier relevé retrouvé', status.lastRun?.stats?.seen === 320, status.lastRun);
-  check('compteur d’annonces juste', status.activeListings === 320, status.activeListings);
+  check('relevé récupéré', status.lastRun?.stats?.seen === 320, status.lastRun);
 
-  console.log('\nFiltres par source');
-  const favorites = await get('/api/listings?source=favorites', cookie);
-  check('filtre favoris fonctionnel', favorites.listings?.length === 107, favorites.listings?.length);
-
-  console.log('\nCompte prêt pour la collecte');
+  console.log('\nLe compte fantôme disparaît');
   const users = await fetch(`${BASE}/api/internal/users`, {
     headers: { 'x-worker-token': 'jeton-de-test' },
   }).then((r) => r.json());
-  check('le compte fantôme a été absorbé', users.users?.length === 1, users.users?.map((u) => u.email));
-  check('seul le compte valide reste', users.users?.[0]?.email === EMAIL, users.users?.[0]?.email);
-  check(
-    'identifiant interne attribué',
-    typeof users.users?.[0]?.uid === 'string' && users.users[0].uid.length > 10,
-    users.users?.[0]?.uid,
-  );
-  check(
-    'mot de passe leboncoin récupérable',
-    users.users?.some((u) => u.password === LBC_PASSWORD),
-    users.users?.some((u) => u.password) ? '(présent)' : '(absent)',
-  );
-
-  console.log('\nRelance : rien ne doit bouger');
-  const again = await get('/api/listings', cookie);
-  check('toujours 320 annonces', again.listings?.length === 320, again.listings?.length);
+  check('un seul compte', users.users?.length === 1, users.users?.map((u) => u.email));
+  check('le bon', users.users?.[0]?.email === EMAIL, users.users?.[0]?.email);
 } finally {
   server.kill('SIGTERM');
   await mongo.stop();

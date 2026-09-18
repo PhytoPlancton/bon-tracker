@@ -99,6 +99,13 @@ Format : [date] | ce qui a mal tourné | règle pour l'éviter
   la valeur ; et ne jamais laisser un index rater bloquer le service — une
   requête lente vaut mieux qu'une panne.
 
+- [2026-09-18] | La migration rattachait l'historique « au plus ancien
+  compte ». Or le plus ancien était né d'une adresse mal saisie : les 320
+  annonces lui sont revenues, et le compte réel s'est retrouvé vide. | Pour
+  désigner un propriétaire, se fonder sur ce qui l'identifie vraiment — ici le
+  compte décrit par la configuration — et non sur un ordre d'arrivée, qui ne
+  dit rien de la légitimité.
+
 ## Règles permanentes du projet
 - Un seul client MongoDB, `maxPoolSize` bas : le quota de 500 connexions est
   partagé entre plusieurs applications.
