@@ -73,5 +73,13 @@ session) couvre le cas où l'automatisation échoue.
 - [x] Collecte multi-comptes : un contexte de navigateur par personne, en série
 - [ ] Éprouver le parcours complet avec un deuxième compte réel
 
+## Lecture de marché (2026-09-18)
+- [x] Repères par segment : médiane, quartiles, tendance sur 30 jours
+- [x] Annonces sous le marché, situées par leur écart au premier quartile
+- [x] Vendeurs qui baissent, classés par terrain cédé
+- [x] Durée de vie d'une annonce, dès qu'assez d'annonces sont parties
+- [x] Répartition des prix du segment, chaque annonce à sa place
+- [ ] Statistiques d'activité (messages envoyés) — décidé en second
+
 ## Hors scope V1
 Alertes e-mail/Telegram, multi-utilisateur, application native.

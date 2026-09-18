@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "next lint",
     "setup": "node scripts/setup.mjs ../.env",
-    "test": "node tests/cloisonnement.mjs && node tests/migration.mjs"
+    "test": "node tests/cloisonnement.mjs && node tests/migration.mjs && node tests/marche.mjs"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

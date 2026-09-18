@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 
 const TABS = [
   { href: '/', label: 'Suivi', icon: ChartIcon },
+  { href: '/marche', label: 'Marché', icon: MarketIcon },
   { href: '/recherches', label: 'Recherches', icon: SearchIcon },
   { href: '/reglages', label: 'Réglages', icon: GearIcon },
 ];
@@ -41,6 +42,19 @@ function ChartIcon({ active }: { active: boolean }) {
       <path d="M4 16.5 9 11l3.5 3L20 7" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" />
       <circle cx="9" cy="11" r="1.6" fill="currentColor" stroke="none" />
       <circle cx="12.5" cy="14" r="1.6" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+function MarketIcon({ active }: { active: boolean }) {
+  return (
+    <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" strokeWidth={active ? 2.2 : 1.8}>
+      {/* Une distribution : des valeurs réparties autour d'un repère central. */}
+      <path d="M12 4v16" stroke="currentColor" strokeLinecap="round" strokeDasharray="2 3" />
+      <circle cx="6" cy="12" r="1.9" fill="currentColor" stroke="none" />
+      <circle cx="10.5" cy="8.5" r="1.9" fill="currentColor" stroke="none" />
+      <circle cx="14" cy="15" r="1.9" fill="currentColor" stroke="none" />
+      <circle cx="18.5" cy="10.5" r="1.9" fill="currentColor" stroke="none" />
     </svg>
   );
 }
