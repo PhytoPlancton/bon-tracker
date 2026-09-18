@@ -33,16 +33,43 @@ export async function collectListings(page: Page, url: string): Promise<ScrapedL
     await autoScroll(page);
     await page.waitForTimeout(1500);
 
-    if (found.size === 0) {
-      for (const listing of await readDom(page)) {
-        found.set(listing.lbcId, listing);
-      }
+    // Les deux lectures se complètent : les réponses du site portent parfois
+    // un prix exact sans caractéristiques, les cartes l'inverse. Ne recourir à
+    // la seconde qu'en dernier ressort privait les annonces de leur année et
+    // de leur kilométrage sur toutes les pages de résultats.
+    for (const listing of await readDom(page)) {
+      found.set(listing.lbcId, merge(found.get(listing.lbcId), listing));
     }
   } finally {
     page.off('response', onResponse);
   }
 
   return [...found.values()];
+}
+
+/**
+ * Réunit deux lectures d'une même annonce, en gardant de chacune ce qu'elle
+ * apporte. Un champ renseigné l'emporte toujours sur un champ vide.
+ */
+function merge(a: ScrapedListing | undefined, b: ScrapedListing): ScrapedListing {
+  if (!a) return b;
+  return {
+    ...a,
+    ...b,
+    title: longest(a.title, b.title),
+    price: a.price ?? b.price,
+    imageUrl: a.imageUrl ?? b.imageUrl,
+    category: a.category ?? b.category,
+    sellerType: a.sellerType ?? b.sellerType,
+    location: a.location ?? b.location,
+    attributes:
+      a.attributes || b.attributes ? { ...(b.attributes ?? {}), ...(a.attributes ?? {}) } : undefined,
+  };
+}
+
+/** Le titre le plus complet : l'un des deux est parfois tronqué. */
+function longest(a: string, b: string): string {
+  return (a?.length ?? 0) >= (b?.length ?? 0) ? a : b;
 }
 
 /** Parcourt un JSON quelconque et en retire tout ce qui ressemble à une annonce. */
@@ -166,9 +193,27 @@ function absolute(url: string): string {
   return url.startsWith('http') ? url : `${LBC_ORIGIN}${url.startsWith('/') ? '' : '/'}${url}`;
 }
 
-/** Lecture de secours : les cartes d'annonce pointent toutes vers /ad/<catégorie>/<id>. */
+/**
+ * Lit les cartes d'annonce du document.
+ *
+ * Le site publie, à l'intention des lecteurs d'écran, des phrases qui
+ * énoncent le prix, les caractéristiques et le lieu sans ambiguïté. Elles
+ * valent mieux que le texte visible, où l'année et le prix se touchent au
+ * point d'être confondus.
+ */
 async function readDom(page: Page): Promise<ScrapedListing[]> {
   return page.evaluate((origin) => {
+    const clean = (text: string | null | undefined) => (text ?? '').replace(/\s+/g, ' ').trim();
+
+    /** « Boîte de vitesse » devient « boite_de_vitesse ». */
+    const asKey = (label: string) =>
+      label
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '_')
+        .replace(/^_|_$/g, '');
+
     const results: Record<string, unknown>[] = [];
     const seen = new Set<string>();
 
@@ -181,41 +226,49 @@ async function readDom(page: Page): Promise<ScrapedListing[]> {
       if (seen.has(lbcId)) continue;
       seen.add(lbcId);
 
-      const card = anchor.closest('article') ?? anchor;
-      const text = (card.textContent ?? '').replace(/ | /g, ' ');
-      // Un prix s'écrit par groupes de trois chiffres. Accepter n'importe
-      // quelle suite de chiffres et d'espaces faisait avaler ce qui précède :
-      // « 2013 · 28 990 € » devenait 201 328 990.
-      const priceMatches =
-        text.match(/(?:^|[^\d])(\d{1,3}(?:[\s\u202f\u00a0]\d{3})*)\s*€/g) ?? [];
-      const priceMatch =
-        priceMatches.length === 1
-          ? priceMatches[0].match(/(\d{1,3}(?:[\s\u202f\u00a0]\d{3})*)\s*€/)
-          : null;
+      const card = anchor.closest('article') ?? anchor.parentElement ?? anchor;
+      const spoken = Array.from(card.querySelectorAll('[class*="sr-only"]')).map((node) =>
+        clean(node.textContent),
+      );
+
+      // « Prix: 15 900 €. » — énoncé pour lui-même, sans mensualité ni année.
+      const priceLine = spoken.find((line) => /^prix\s*:/i.test(line));
+      const price = priceLine ? Number(priceLine.replace(/[^\d]/g, '')) || null : null;
+
+      // « Année: "2001". Kilométrage: "158300 km". Énergie: "Essence"… »
+      const specsLine = spoken.find((line) => /:\s*"/.test(line)) ?? '';
+      const attributes: Record<string, string> = {};
+      for (const [, label, value] of specsLine.matchAll(/([^.:"]+)\s*:\s*"([^"]+)"/g)) {
+        const key = asKey(label);
+        if (key) attributes[key] = clean(value).slice(0, 80);
+      }
+
+      // « Située à Vannes 56000. »
+      const placeLine = spoken.find((line) => /situ[ée]e?\s+[àa]\s/i.test(line));
+      const location = placeLine
+        ? clean(placeLine.replace(/^.*?\s[àa]\s+/i, '')).replace(/\.$/, '')
+        : clean(card.querySelector('[class*="text-caption"]')?.textContent) || null;
+
       const image = card.querySelector('img');
-      // Le site compose ses titres avec une classe « headline », observée sur
-      // ses autres pages ; les balises de titre ne sont pas toujours employées.
       const title =
-        card
-          .querySelector('[data-test-id="adcard-title"], [class*="headline" i], h2, h3')
-          ?.textContent?.trim() ||
-        anchor.getAttribute('title') ||
-        image?.getAttribute('alt') ||
-        '';
+        clean(card.querySelector('[class*="text-body-1-highlight"], [class*="headline" i]')?.textContent) ||
+        clean(anchor.getAttribute('title')) ||
+        clean(image?.getAttribute('alt'));
 
       // Sans titre, l'annonce serait inexploitable : mieux vaut ne pas la
       // compter que de la ranger sous un numéro.
-      if (title.trim().length <= 2) continue;
+      if (title.length <= 2) continue;
 
       results.push({
         lbcId,
         title: title.slice(0, 300),
         url: href.startsWith('http') ? href : origin + href,
-        price: priceMatch ? Number(priceMatch[1].replace(/[^\d]/g, '')) : null,
+        price,
         imageUrl: image?.getAttribute('src') ?? null,
         category: null,
-        sellerType: text.includes('Pro') ? 'pro' : null,
-        location: null,
+        sellerType: /\bpro\b/i.test(clean(card.textContent)) ? 'pro' : null,
+        location: location || null,
+        attributes: Object.keys(attributes).length ? attributes : undefined,
       });
     }
 
