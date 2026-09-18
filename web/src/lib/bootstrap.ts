@@ -15,6 +15,7 @@ import { readSecret } from './secret';
  */
 export async function ensureBaseline(): Promise<void> {
   const db = await getDb();
+  await dropSingleUserIndexes(db);
   const users = db.collection('users');
   const listings = db.collection('listings');
   const pricePoints = db.collection('price_points');
@@ -72,3 +73,30 @@ export async function ensureBaseline(): Promise<void> {
 
 /** Conservé sous son ancien nom pour les appels existants. */
 export const ensureAdminUser = ensureBaseline;
+
+/**
+ * Retire les index de l'époque où l'application n'avait qu'un utilisateur.
+ *
+ * Ils imposaient qu'un identifiant d'annonce ou de recherche soit unique dans
+ * toute la base : deux personnes suivant la même annonce n'auraient pas pu
+ * coexister, la seconde collecte échouant sur un doublon.
+ */
+async function dropSingleUserIndexes(db: Awaited<ReturnType<typeof getDb>>): Promise<void> {
+  const obsolete: [string, string][] = [
+    ['listings', 'lbcId_1'],
+    ['listings', 'isActive_1_lastSeenAt_-1'],
+    ['price_points', 'lbcId_1_observedAt_1'],
+    ['searches', 'lbcSearchId_1'],
+    ['runs', 'startedAt_-1'],
+  ];
+
+  await Promise.all(
+    obsolete.map(([collection, index]) =>
+      db
+        .collection(collection)
+        .dropIndex(index)
+        // Absent, donc déjà retiré : rien à signaler.
+        .catch(() => undefined),
+    ),
+  );
+}
