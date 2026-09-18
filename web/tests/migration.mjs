@@ -47,7 +47,7 @@ await db.collection('users').insertMany([
   // documents sans identifiant interne faisaient échouer l'index qui les
   // distingue, et le plus ancien héritait de tout l'historique.
   {
-    email: 'proprietaire 4@example.com',
+    email: 'proprietaire\uFFFD4@example.com',
     passwordHash: hash,
     createdAt: new Date(now - 5 * day),
   },

@@ -20,6 +20,16 @@ if (!uri) {
   process.exit(1);
 }
 
+/**
+ * Une adresse exploitable : lettres, chiffres et ponctuation courante.
+ *
+ * Chercher ce qui cloche ne marche pas — une saisie fautive peut contenir
+ * n'importe quel caractère invisible, et « contient une espace » laisse
+ * passer le reste. On reconnaît donc ce qui est valide, et le reste ne l'est
+ * pas.
+ */
+const VALID_EMAIL = /^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/i;
+
 const client = new MongoClient(uri);
 await client.connect();
 const db = client.db(dbName);
@@ -38,7 +48,8 @@ console.log('──────────────────────�
 await describe();
 
 // --- Qui doit posséder les données ? ---------------------------------------
-const valid = await users.find({ email: { $not: /\s/ } }).sort({ createdAt: 1 }).toArray();
+const everyone = await users.find({}).sort({ createdAt: 1 }).toArray();
+const valid = everyone.filter((user) => VALID_EMAIL.test(user.email ?? ''));
 const owner =
   (configured ? valid.find((user) => user.email === configured) : null) ?? valid[0] ?? null;
 
@@ -75,8 +86,8 @@ for (const collection of owned) {
   }
 }
 
-// Comptes nés d'une adresse fautive : ils n'ont jamais rien collecté.
-const ghosts = await users.find({ email: /\s/ }).toArray();
+// Comptes nés d'une saisie fautive : ils n'ont jamais rien collecté.
+const ghosts = everyone.filter((user) => !VALID_EMAIL.test(user.email ?? ''));
 for (const ghost of ghosts) {
   if (!ghost.uid || ghost.uid === owner.uid) {
     await users.deleteOne({ _id: ghost._id });

@@ -5,6 +5,15 @@ import { encrypt } from './crypto';
 import { readSecret } from './secret';
 
 /**
+ * Une adresse exploitable : lettres, chiffres et ponctuation courante.
+ *
+ * Chercher ce qui cloche ne marche pas — une saisie fautive peut contenir
+ * n'importe quel caractère invisible. On reconnaît ce qui est valide, et le
+ * reste ne l'est pas.
+ */
+const VALID_EMAIL = /^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/i;
+
+/**
  * Prépare la base pour le fonctionnement à plusieurs comptes.
  *
  * Reprend l'installation d'origine, qui n'avait qu'un utilisateur et des
@@ -84,13 +93,12 @@ export async function ensureBaseline(): Promise<void> {
     );
   }
 
-  // Une adresse contenant une espace ne peut venir que d'une saisie fautive :
-  // ce compte n'a jamais rien collecté, et ce qu'on lui a attribué revient au
-  // compte configuré.
+  // Un compte dont l'adresse n'est pas exploitable vient d'une saisie fautive :
+  // il n'a jamais rien collecté, et ce qu'on lui a attribué revient au compte
+  // configuré.
   if (configured?.uid) {
-    const ghosts = await users
-      .find({ email: { $regex: /\s/ } }, { projection: { uid: 1, email: 1 } })
-      .toArray();
+    const everyone = await users.find({}, { projection: { uid: 1, email: 1 } }).toArray();
+    const ghosts = everyone.filter((user) => !VALID_EMAIL.test(user.email ?? ''));
 
     for (const ghost of ghosts) {
       if (!ghost.uid || ghost.uid === configured.uid) continue;

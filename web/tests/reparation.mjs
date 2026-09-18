@@ -43,7 +43,7 @@ const hash = await bcrypt.hash(PASSWORD, 10);
 
 // État après une migration qui a choisi le mauvais propriétaire.
 await db.collection('users').insertMany([
-  { uid: GHOST_UID, email: 'proprietaire 4@example.com', passwordHash: hash, lbcPassword: null, lbcSession: null, lbcStatus: 'ok', lbcCheckedAt: null, createdAt: new Date(now - 5 * day) },
+  { uid: GHOST_UID, email: 'proprietaire\uFFFD4@example.com', passwordHash: hash, lbcPassword: null, lbcSession: null, lbcStatus: 'ok', lbcCheckedAt: null, createdAt: new Date(now - 5 * day) },
   { uid: GOOD_UID, email: EMAIL, passwordHash: hash, lbcPassword: null, lbcSession: null, lbcStatus: 'ok', lbcCheckedAt: null, createdAt: new Date(now - 4 * day) },
 ]);
 

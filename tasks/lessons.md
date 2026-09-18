@@ -106,6 +106,13 @@ Format : [date] | ce qui a mal tourné | règle pour l'éviter
   compte décrit par la configuration — et non sur un ordre d'arrivée, qui ne
   dit rien de la légitimité.
 
+- [2026-09-18] | Pour reconnaître un compte né d'une saisie fautive, je
+  cherchais une espace dans l'adresse. La vraie contenait un caractère
+  invisible mal encodé : la réparation n'a rien trouvé et n'a rien fait. |
+  Reconnaître ce qui est valide plutôt qu'énumérer ce qui cloche : une saisie
+  fautive peut contenir n'importe quoi, une adresse correcte a une forme
+  connue.
+
 ## Règles permanentes du projet
 - Un seul client MongoDB, `maxPoolSize` bas : le quota de 500 connexions est
   partagé entre plusieurs applications.
