@@ -14,15 +14,19 @@ function guard(request: Request) {
 export async function GET(request: Request) {
   if (!guard(request)) return NextResponse.json({ error: 'Interdit' }, { status: 403 });
 
+  const uid = new URL(request.url).searchParams.get('uid');
+  if (!uid) return NextResponse.json({ error: 'Compte manquant' }, { status: 400 });
+
   const { searches } = await collections();
   const tracked = await searches
-    .find({ tracked: true }, { projection: { _id: 0, lbcSearchId: 1, name: 1, url: 1 } })
+    .find({ uid, tracked: true }, { projection: { _id: 0, lbcSearchId: 1, name: 1, url: 1 } })
     .toArray();
 
   return NextResponse.json({ searches: tracked });
 }
 
 const schema = z.object({
+  uid: z.string().min(1),
   searches: z
     .array(
       z.object({
@@ -51,7 +55,7 @@ export async function POST(request: Request) {
   await searches.bulkWrite(
     parsed.data.searches.map((item) => ({
       updateOne: {
-        filter: { lbcSearchId: item.lbcSearchId },
+        filter: { uid: parsed.data.uid, lbcSearchId: item.lbcSearchId },
         update: {
           $set: {
             name: item.name,
@@ -59,7 +63,12 @@ export async function POST(request: Request) {
             details: item.details ?? null,
             itemCount: item.itemCount ?? 0,
           },
-          $setOnInsert: { lbcSearchId: item.lbcSearchId, tracked: false, lastRunAt: null },
+          $setOnInsert: {
+            uid: parsed.data.uid,
+            lbcSearchId: item.lbcSearchId,
+            tracked: false,
+            lastRunAt: null,
+          },
         },
         upsert: true,
       },

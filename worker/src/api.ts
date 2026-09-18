@@ -41,41 +41,62 @@ async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
   return (await response.json()) as T;
 }
 
-/** La session leboncoin est stockée chiffrée côté web : le worker ne garde rien sur disque. */
-export function fetchStoredSession() {
-  return call<{ storageState: Record<string, unknown> | null; updatedAt: string | null }>(
-    '/api/internal/session',
+export interface CollectableUser {
+  uid: string;
+  email: string;
+  /** Mot de passe du compte leboncoin, déchiffré par l'application. */
+  password: string | null;
+  /** Session en cours, au format attendu par le navigateur. */
+  session: Record<string, unknown> | null;
+}
+
+/** Comptes à relever. Les secrets restent chiffrés au repos côté application. */
+export function fetchUsers() {
+  return call<{ users: CollectableUser[] }>('/api/internal/users');
+}
+
+export function storeSession(uid: string, storageState: Record<string, unknown>) {
+  return call<{ ok: boolean }>('/api/internal/users', {
+    method: 'PUT',
+    body: JSON.stringify({ uid, storageState }),
+  });
+}
+
+export function reportLbcStatus(
+  uid: string,
+  status: 'ok' | 'needs_login' | 'blocked' | 'verification_required',
+) {
+  return call<{ ok: boolean }>('/api/internal/users', {
+    method: 'PUT',
+    body: JSON.stringify({ uid, status }),
+  });
+}
+
+export function ingest(uid: string, source: string, listings: ScrapedListing[]) {
+  return call<RunStats>('/api/internal/ingest', {
+    method: 'POST',
+    body: JSON.stringify({ uid, source, listings }),
+  });
+}
+
+export function fetchTrackedSearches(uid: string) {
+  return call<{ searches: TrackedSearch[] }>(
+    `/api/internal/searches?uid=${encodeURIComponent(uid)}`,
   );
 }
 
-export function storeSession(storageState: Record<string, unknown>) {
-  return call<{ ok: boolean }>('/api/internal/session', {
-    method: 'PUT',
-    body: JSON.stringify({ storageState }),
-  });
-}
-
-export function ingest(source: string, listings: ScrapedListing[]) {
-  return call<RunStats>('/api/internal/ingest', {
-    method: 'POST',
-    body: JSON.stringify({ source, listings }),
-  });
-}
-
-export function fetchTrackedSearches() {
-  return call<{ searches: TrackedSearch[] }>('/api/internal/searches');
-}
-
 export function reportSearches(
+  uid: string,
   searches: { lbcSearchId: string; name: string; url: string; details?: string | null; itemCount?: number }[],
 ) {
   return call<{ upserted: number }>('/api/internal/searches', {
     method: 'POST',
-    body: JSON.stringify({ searches }),
+    body: JSON.stringify({ uid, searches }),
   });
 }
 
 export function reportRun(payload: {
+  uid: string;
   startedAt: string;
   status: 'ok' | 'error' | 'needs_session';
   stats: RunStats;

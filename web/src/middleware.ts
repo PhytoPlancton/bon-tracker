@@ -6,7 +6,9 @@ const SESSION_COOKIE = 'bt_session';
 /** Chemins accessibles sans session applicative. */
 const PUBLIC_PATHS = [
   '/login',
+  '/inscription',
   '/api/auth/login',
+  '/api/auth/register',
   '/manifest.webmanifest',
   '/sw.js',
   '/icons',

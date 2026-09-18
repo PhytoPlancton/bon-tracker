@@ -7,6 +7,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const schema = z.object({
+  uid: z.string().min(1),
   startedAt: z.string().datetime(),
   status: z.enum(['ok', 'error', 'needs_session']),
   stats: z.object({
@@ -32,6 +33,7 @@ export async function POST(request: Request) {
   const now = new Date();
 
   await runs.insertOne({
+    uid: parsed.data.uid,
     startedAt: new Date(parsed.data.startedAt),
     finishedAt: now,
     status: parsed.data.status,
@@ -41,7 +43,7 @@ export async function POST(request: Request) {
 
   if (parsed.data.trackedSearchIds?.length) {
     await searches.updateMany(
-      { lbcSearchId: { $in: parsed.data.trackedSearchIds } },
+      { uid: parsed.data.uid, lbcSearchId: { $in: parsed.data.trackedSearchIds } },
       { $set: { lastRunAt: now } },
     );
   }

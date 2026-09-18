@@ -19,6 +19,7 @@ export interface IngestResult {
  *    elle n'est désactivée que lorsqu'elle a disparu de toutes ses sources.
  */
 export async function ingestListings(
+  uid: string,
   source: ListingSource,
   scraped: ScrapedListing[],
 ): Promise<IngestResult> {
@@ -28,7 +29,7 @@ export async function ingestListings(
 
   const seenIds = scraped.map((item) => item.lbcId);
   const existing = seenIds.length
-    ? await listings.find({ lbcId: { $in: seenIds } }).toArray()
+    ? await listings.find({ uid, lbcId: { $in: seenIds } }).toArray()
     : [];
   const byId = new Map(existing.map((doc) => [doc.lbcId, doc]));
 
@@ -43,12 +44,12 @@ export async function ingestListings(
     if (!previous) result.created += 1;
     if (priceChanged) {
       if (previous) result.priceChanges += 1;
-      newPoints.push({ lbcId: item.lbcId, price: item.price as number, observedAt: now });
+      newPoints.push({ uid, lbcId: item.lbcId, price: item.price as number, observedAt: now });
     }
 
     listingOps.push({
       updateOne: {
-        filter: { lbcId: item.lbcId },
+        filter: { uid, lbcId: item.lbcId },
         update: {
           $set: {
             title: item.title,
@@ -62,6 +63,7 @@ export async function ingestListings(
             ...(item.price !== null ? { currentPrice: item.price } : {}),
           },
           $setOnInsert: {
+            uid,
             lbcId: item.lbcId,
             firstSeenAt: now,
             ...(item.price === null ? { currentPrice: null } : {}),
@@ -78,7 +80,10 @@ export async function ingestListings(
 
   // Annonces qui étaient rattachées à cette source et qu'on n'a plus vues.
   const gone = await listings
-    .find({ sources: source, lbcId: { $nin: seenIds } }, { projection: { lbcId: 1, sources: 1 } })
+    .find(
+      { uid, sources: source, lbcId: { $nin: seenIds } },
+      { projection: { lbcId: 1, sources: 1 } },
+    )
     .toArray();
 
   if (gone.length) {
@@ -88,7 +93,7 @@ export async function ingestListings(
         if (remaining.length === 0) result.deactivated += 1;
         return {
           updateOne: {
-            filter: { lbcId: doc.lbcId },
+            filter: { uid, lbcId: doc.lbcId },
             update: {
               $pull: { sources: source },
               ...(remaining.length === 0 ? { $set: { isActive: false } } : {}),
@@ -122,12 +127,12 @@ export interface ListingSummary {
 }
 
 /** Liste enrichie du premier prix connu et du nombre de changements de prix. */
-export async function listListings(options: {
-  includeInactive?: boolean;
-  source?: string;
-} = {}): Promise<ListingSummary[]> {
+export async function listListings(
+  uid: string,
+  options: { includeInactive?: boolean; source?: string } = {},
+): Promise<ListingSummary[]> {
   const { listings } = await collections();
-  const filter: Record<string, unknown> = {};
+  const filter: Record<string, unknown> = { uid };
   if (!options.includeInactive) filter.isActive = true;
   if (options.source) filter.sources = options.source;
 
@@ -139,10 +144,19 @@ export async function listListings(options: {
       {
         $lookup: {
           from: 'price_points',
-          localField: 'lbcId',
-          foreignField: 'lbcId',
           as: 'points',
-          pipeline: [{ $sort: { observedAt: 1 } }, { $project: { price: 1, observedAt: 1, _id: 0 } }],
+          let: { owner: '$uid', ad: '$lbcId' },
+          // La jointure porte aussi sur le propriétaire : deux personnes
+          // peuvent suivre la même annonce sans mélanger leurs historiques.
+          pipeline: [
+            {
+              $match: {
+                $expr: { $and: [{ $eq: ['$uid', '$$owner'] }, { $eq: ['$lbcId', '$$ad'] }] },
+              },
+            },
+            { $sort: { observedAt: 1 } },
+            { $project: { price: 1, observedAt: 1, _id: 0 } },
+          ],
         },
       },
       {
@@ -178,12 +192,12 @@ function serializeSummary(doc: ListingSummary): ListingSummary {
   };
 }
 
-export async function getListingDetail(lbcId: string) {
+export async function getListingDetail(uid: string, lbcId: string) {
   const { listings, pricePoints } = await collections();
-  const listing = await listings.findOne({ lbcId }, { projection: { _id: 0 } });
+  const listing = await listings.findOne({ uid, lbcId }, { projection: { _id: 0 } });
   if (!listing) return null;
   const points = await pricePoints
-    .find({ lbcId }, { projection: { _id: 0, price: 1, observedAt: 1 } })
+    .find({ uid, lbcId }, { projection: { _id: 0, price: 1, observedAt: 1 } })
     .sort({ observedAt: 1 })
     .toArray();
 

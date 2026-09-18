@@ -1,6 +1,35 @@
 export type ListingSource = 'favorites' | `search:${string}`;
 
+/** Secret chiffré au repos (AES-256-GCM). */
+export interface Sealed {
+  ciphertext: string;
+  iv: string;
+  tag: string;
+}
+
+export type LbcStatus = 'ok' | 'needs_login' | 'blocked' | 'verification_required';
+
+export interface User {
+  /** Identifiant interne, porté par la session et par chaque donnée collectée. */
+  uid: string;
+  /** Adresse du compte leboncoin, qui sert aussi à se connecter à l'app. */
+  email: string;
+  /** Vérifie la connexion à l'app, sans permettre de retrouver le mot de passe. */
+  passwordHash: string;
+  /**
+   * Le même mot de passe, chiffré et réversible cette fois : le collecteur en
+   * a besoin pour rouvrir une session leboncoin quand celle-ci expire.
+   */
+  lbcPassword: Sealed | null;
+  /** Session leboncoin en cours, pour éviter de se reconnecter à chaque relevé. */
+  lbcSession: Sealed | null;
+  lbcStatus: LbcStatus;
+  lbcCheckedAt: Date | null;
+  createdAt: Date;
+}
+
 export interface Listing {
+  uid: string;
   lbcId: string;
   title: string;
   url: string;
@@ -16,12 +45,14 @@ export interface Listing {
 }
 
 export interface PricePoint {
+  uid: string;
   lbcId: string;
   price: number;
   observedAt: Date;
 }
 
 export interface SavedSearch {
+  uid: string;
   lbcSearchId: string;
   name: string;
   url: string;
@@ -35,6 +66,7 @@ export interface SavedSearch {
 export type RunStatus = 'running' | 'ok' | 'error' | 'needs_session';
 
 export interface Run {
+  uid: string;
   startedAt: Date;
   finishedAt: Date | null;
   status: RunStatus;

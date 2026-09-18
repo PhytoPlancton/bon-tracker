@@ -64,5 +64,14 @@ Le parcours de connexion réel à leboncoin et la structure exacte de ses pages 
 cela demande le compte et une IP résidentielle. Le repli manuel (coller une
 session) couvre le cas où l'automatisation échoue.
 
+## Multi-utilisateur (2026-09-18)
+- [x] Cloisonnement : chaque annonce, point de prix, recherche et relevé
+      appartient à un compte ; 21 vérifications d'isolation passent
+- [x] Inscription par identifiants leboncoin : le collecteur ouvre une vraie
+      session pour les éprouver avant de créer le compte
+- [x] Connexion à l'app avec les mêmes identifiants
+- [x] Collecte multi-comptes : un contexte de navigateur par personne, en série
+- [ ] Éprouver le parcours complet avec un deuxième compte réel
+
 ## Hors scope V1
 Alertes e-mail/Telegram, multi-utilisateur, application native.

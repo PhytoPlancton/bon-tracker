@@ -1,9 +1,14 @@
+import type { Browser, BrowserContext } from 'playwright';
 import { config, LBC_ORIGIN } from './config.js';
 import {
   fetchTrackedSearches,
+  fetchUsers,
   ingest,
+  reportLbcStatus,
   reportRun,
   reportSearches,
+  storeSession,
+  type CollectableUser,
   type RunStats,
 } from './api.js';
 import {
@@ -11,8 +16,8 @@ import {
   captureDiagnostic,
   checkSession,
   connectToChrome,
-  mainContext,
 } from './browser.js';
+import { loginToLeboncoin } from './login.js';
 import { collectListings, collectSavedSearches } from './scrape.js';
 
 export function log(message: string, extra?: unknown): void {
@@ -37,6 +42,15 @@ export function isRunning(): boolean {
   return running;
 }
 
+/**
+ * Relève tous les comptes, l'un après l'autre.
+ *
+ * Chaque compte reçoit son propre contexte de navigateur : ses cookies lui
+ * restent propres, et deux personnes peuvent suivre la même annonce sans que
+ * leurs sessions se mélangent. Les comptes sont traités en série, jamais en
+ * parallèle : trois navigations simultanées depuis une même connexion se
+ * remarquent.
+ */
 export async function runOnce(): Promise<void> {
   if (running) {
     log('Relevé déjà en cours, passage ignoré');
@@ -44,98 +58,124 @@ export async function runOnce(): Promise<void> {
   }
   running = true;
 
+  let browser: Browser | null = null;
+  try {
+    const { users } = await fetchUsers();
+    if (!users.length) {
+      log('Aucun compte à relever');
+      return;
+    }
+
+    browser = await connectToChrome();
+    log(`${users.length} compte(s) à relever`);
+
+    for (const [index, user] of users.entries()) {
+      if (index > 0) await pause(config.pageDelayMs * 2);
+      await collectForUser(browser, user);
+    }
+  } catch (cause) {
+    log('Relevé impossible', cause instanceof Error ? cause.message : String(cause));
+  } finally {
+    await browser?.close().catch(() => undefined);
+    running = false;
+  }
+}
+
+async function collectForUser(browser: Browser, user: CollectableUser): Promise<void> {
   const startedAt = new Date().toISOString();
   let stats: RunStats = { seen: 0, created: 0, priceChanges: 0, deactivated: 0 };
   let status: 'ok' | 'error' | 'needs_session' = 'ok';
   let error: string | null = null;
   const trackedSearchIds: string[] = [];
 
-  const browser = await connectToChrome();
-  const context = mainContext(browser);
-  // Un onglet à nous, pour ne pas détourner celui que l'utilisateur consulte.
-  const page = await context.newPage();
+  const label = user.email.replace(/(.{2}).*(@.*)/, '$1***$2');
+  let context: BrowserContext | null = null;
 
   try {
-    const state = await checkSession(page);
+    context = await browser.newContext(
+      user.session ? { storageState: user.session as never } : undefined,
+    );
+    const page = await context.newPage();
 
-    if (state === 'challenged') {
-      throw new NeedsManualSession(
-        'Le site demande une vérification. Ouvre leboncoin dans le Chrome dédié, ' +
-          'fais glisser le curseur, puis relance un relevé.',
-      );
-    }
-    if (state === 'logged_out') {
-      throw new NeedsManualSession(
-        'Personne n’est connecté dans le Chrome dédié. Connecte-toi à leboncoin ' +
-          'dans cette fenêtre : la session y restera.',
-      );
-    }
-    log('Session valide dans le Chrome dédié');
+    let state = await checkSession(page);
 
-    // 1. Les favoris, toujours.
+    if (state !== 'logged_in') {
+      if (!user.password) {
+        throw new NeedsManualSession(
+          'Session expirée et aucun mot de passe enregistré : reconnecte-toi depuis l’application.',
+        );
+      }
+
+      log(`[${label}] session absente, connexion en cours`);
+      const result = await loginToLeboncoin(context, user.email, user.password);
+
+      if (result.outcome !== 'ok') {
+        await reportLbcStatus(
+          user.uid,
+          result.outcome === 'bad_credentials' ? 'needs_login' : result.outcome === 'blocked' ? 'blocked' : 'verification_required',
+        ).catch(() => undefined);
+        throw new NeedsManualSession(result.detail);
+      }
+
+      await storeSession(user.uid, (await context.storageState()) as never).catch(() => undefined);
+      state = await checkSession(page);
+      if (state !== 'logged_in') {
+        throw new NeedsManualSession('Connexion acceptée mais session inutilisable');
+      }
+      log(`[${label}] connexion réussie`);
+    }
+
     const favorites = await collectListings(page, `${LBC_ORIGIN}/favorites`);
-    log(`Favoris : ${favorites.length} annonces`);
+    log(`[${label}] favoris : ${favorites.length} annonces`);
     if (favorites.length) {
-      stats = add(stats, await ingest('favorites', favorites));
+      stats = add(stats, await ingest(user.uid, 'favorites', favorites));
     }
 
-    // 2. Les recherches sauvegardées du compte, pour alimenter l'écran de choix.
     const discovered = await collectSavedSearches(page).catch((cause) => {
-      log('Recherches sauvegardées illisibles', String(cause));
+      log(`[${label}] recherches sauvegardées illisibles`, String(cause));
       return [];
     });
     if (discovered.length) {
-      await reportSearches(discovered);
-      log(`Recherches sauvegardées : ${discovered.length} détectées`);
-
-      // Des noms tous identiques trahissent une extraction qui a ramassé un
-      // libellé de bouton : on garde la page pour pouvoir viser juste.
-      const distinct = new Set(discovered.map((search) => search.name));
-      if (distinct.size < discovered.length / 2) {
-        const shot = await captureDiagnostic(page, 'recherches').catch(() => null);
-        log(
-          `Noms de recherches douteux (${distinct.size} distincts sur ${discovered.length}).` +
-            (shot ? ` Page enregistrée : ${shot}` : ''),
-        );
-      }
+      await reportSearches(user.uid, discovered);
+      log(`[${label}] recherches sauvegardées : ${discovered.length} détectées`);
     }
 
-    // 3. Celles que l'utilisateur a activées.
-    const { searches } = await fetchTrackedSearches();
+    const { searches } = await fetchTrackedSearches(user.uid);
     for (const search of searches) {
-      await page.waitForTimeout(config.pageDelayMs);
+      await pause(config.pageDelayMs);
       const listings = await collectListings(page, search.url);
-      log(`Recherche « ${search.name} » : ${listings.length} annonces`);
+      log(`[${label}] « ${search.name} » : ${listings.length} annonces`);
       if (listings.length) {
-        stats = add(stats, await ingest(`search:${search.lbcSearchId}`, listings));
+        stats = add(stats, await ingest(user.uid, `search:${search.lbcSearchId}`, listings));
       }
       trackedSearchIds.push(search.lbcSearchId);
     }
+
+    // Les cookies ont pu être rafraîchis pendant la visite.
+    await storeSession(user.uid, (await context.storageState()) as never).catch(() => undefined);
   } catch (cause) {
     const blocked = cause instanceof NeedsManualSession;
-    const shot = await captureDiagnostic(page, blocked ? 'session' : 'erreur').catch(() => null);
+    status = blocked ? 'needs_session' : 'error';
+    error = cause instanceof Error ? cause.message : String(cause);
+    log(`[${label}] ${blocked ? 'intervention nécessaire' : 'échec'}`, error);
 
-    if (blocked) {
-      status = 'needs_session';
-      error = (cause as NeedsManualSession).message;
-      log('Intervention nécessaire', error);
-    } else {
-      status = 'error';
-      error = cause instanceof Error ? cause.message : String(cause);
-      log('Relevé en échec', error);
+    const page = context?.pages()[0];
+    if (page) {
+      const shot = await captureDiagnostic(page, `${user.uid.slice(0, 8)}-${status}`).catch(
+        () => null,
+      );
+      if (shot) log(`[${label}] capture enregistrée : ${shot}`);
     }
-    if (shot) log(`Capture de la page enregistrée dans le dossier debug : ${shot}`);
   } finally {
-    // On ferme notre onglet, jamais le navigateur : il appartient à l'utilisateur.
-    await page.close().catch(() => undefined);
-    await browser.close().catch(() => undefined);
-    running = false;
+    await context?.close().catch(() => undefined);
   }
 
-  await reportRun({ startedAt, status, stats, error, trackedSearchIds }).catch((cause) => {
-    log("Impossible de remonter l'état du relevé", String(cause));
-  });
-
-  log('Relevé terminé', { status, ...stats });
+  await reportRun({ uid: user.uid, startedAt, status, stats, error, trackedSearchIds }).catch(
+    (cause) => log(`[${label}] état du relevé non remonté`, String(cause)),
+  );
+  log(`[${label}] terminé`, { status, ...stats });
 }
 
+function pause(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}

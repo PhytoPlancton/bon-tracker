@@ -83,6 +83,13 @@ Format : [date] | ce qui a mal tourné | règle pour l'éviter
   opération qu'on se surprend à lancer en ligne de commande plusieurs fois a
   sa place dans l'interface.
 
+- [2026-09-18] | La connexion au site échouait depuis deux jours ; le test a
+  montré que l'adresse employée, /connexion, renvoyait simplement une 404. Le
+  formulaire vit sur un autre domaine, derrière un flux OAuth aux paramètres
+  renouvelés. | Avant de conclure qu'une protection bloque, vérifier que la
+  page visée existe. Et pour atteindre un formulaire, suivre la redirection
+  que le site propose plutôt que d'écrire son adresse en dur.
+
 ## Règles permanentes du projet
 - Un seul client MongoDB, `maxPoolSize` bas : le quota de 500 connexions est
   partagé entre plusieurs applications.

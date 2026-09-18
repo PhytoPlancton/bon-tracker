@@ -14,9 +14,18 @@ interface StatusResponse {
   } | null;
   hasSession: boolean;
   sessionUpdatedAt: string | null;
+  lbcStatus: 'ok' | 'needs_login' | 'blocked' | 'verification_required';
+  email: string | null;
   activeListings: number;
   trackedSearches: number;
 }
+
+const LBC_LABEL: Record<string, { text: string; className: string }> = {
+  ok: { text: 'Connecté', className: 'text-down' },
+  needs_login: { text: 'Identifiants à revoir', className: 'text-up' },
+  blocked: { text: 'Vérification demandée', className: 'text-accent' },
+  verification_required: { text: 'Code demandé par leboncoin', className: 'text-accent' },
+};
 
 const STATUS_LABEL: Record<string, { text: string; className: string }> = {
   ok: { text: 'Collecte OK', className: 'text-down' },
@@ -27,10 +36,6 @@ const STATUS_LABEL: Record<string, { text: string; className: string }> = {
 
 export default function SettingsPage() {
   const { data, reload } = useApi<StatusResponse>('/api/status');
-  const [cookieHeader, setCookieHeader] = useState('');
-  const [message, setMessage] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
-  const [showHelp, setShowHelp] = useState(false);
   const [collecting, setCollecting] = useState(false);
   const [collectMessage, setCollectMessage] = useState<string | null>(null);
 
@@ -77,28 +82,6 @@ export default function SettingsPage() {
     }, 4000);
   }
 
-  async function submitSession(event: React.FormEvent) {
-    event.preventDefault();
-    setPending(true);
-    setMessage(null);
-
-    const response = await fetch('/api/lbc-session', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ cookieHeader }),
-    });
-    const body = await response.json().catch(() => ({}));
-
-    setMessage(
-      response.ok
-        ? `Session enregistrée (${body.cookies} cookies). Elle sera utilisée au prochain relevé.`
-        : (body.error ?? 'Enregistrement impossible'),
-    );
-    if (response.ok) setCookieHeader('');
-    setPending(false);
-    void reload();
-  }
-
   const status = data?.lastRun?.status ?? (data?.hasSession ? 'running' : 'needs_session');
   const label = STATUS_LABEL[status] ?? STATUS_LABEL.running;
 
@@ -122,10 +105,8 @@ export default function SettingsPage() {
           <Row label="Annonces suivies" value={String(data?.activeListings ?? 0)} />
           <Row label="Recherches actives" value={String(data?.trackedSearches ?? 0)} />
           <Row
-            label="Session leboncoin"
-            value={
-              data?.sessionUpdatedAt ? `posée ${relativeTime(data.sessionUpdatedAt)}` : 'absente'
-            }
+            label="Compte leboncoin"
+            value={LBC_LABEL[data?.lbcStatus ?? 'needs_login']?.text ?? '—'}
           />
         </dl>
 
@@ -151,49 +132,27 @@ export default function SettingsPage() {
       </section>
 
       <section className="mb-4 rounded-2xl border border-ink-line bg-ink-soft p-4">
-        <h2 className="text-sm font-medium text-zinc-200">Session leboncoin de secours</h2>
+        <h2 className="text-sm font-medium text-zinc-200">Compte leboncoin</h2>
         <p className="mt-1 text-[12px] leading-relaxed text-zinc-500">
-          Le worker se connecte seul. Si leboncoin réclame une vérification, colle ici l’en-tête
-          <code className="mx-1 rounded bg-ink px-1 py-0.5 text-[11px] text-zinc-400">Cookie</code>
-          relevé depuis un navigateur déjà connecté.
+          {data?.email ?? '—'}
         </p>
-
-        <button
-          onClick={() => setShowHelp((value) => !value)}
-          className="mt-2 text-[12px] font-medium text-accent"
-        >
-          {showHelp ? 'Masquer la marche à suivre' : 'Comment le récupérer ?'}
-        </button>
-
-        {showHelp && (
-          <ol className="mt-2 list-decimal space-y-1 pl-4 text-[12px] leading-relaxed text-zinc-500">
-            <li>Sur ordinateur, ouvre leboncoin.fr connecté à ton compte.</li>
-            <li>Ouvre les outils de développement, onglet Réseau.</li>
-            <li>Recharge la page et clique la première requête vers leboncoin.fr.</li>
-            <li>
-              Dans les en-têtes de requête, copie toute la valeur de <code>Cookie</code>.
-            </li>
-            <li>Colle-la ci-dessous.</li>
-          </ol>
+        <p className="mt-2 text-[12px] leading-relaxed text-zinc-500">
+          Le collecteur ouvre lui-même ta session à partir de ces identifiants, et la
+          renouvelle quand elle expire. Si tu changes ton mot de passe sur leboncoin,
+          reconnecte-toi ici avec le nouveau.
+        </p>
+        {data?.lbcStatus === 'needs_login' && (
+          <p className="mt-2 rounded-xl border border-up/30 bg-up/10 px-3 py-2 text-[12px] text-up">
+            leboncoin a refusé les identifiants enregistrés. Déconnecte-toi et reconnecte-toi
+            avec ton mot de passe à jour.
+          </p>
         )}
-
-        <form onSubmit={submitSession} className="mt-3 space-y-2">
-          <textarea
-            value={cookieHeader}
-            onChange={(event) => setCookieHeader(event.target.value)}
-            rows={4}
-            placeholder="datadome=…; luat=…; …"
-            className="w-full resize-none rounded-xl border border-ink-line bg-ink px-3 py-2.5 font-mono text-[11px] outline-none placeholder:text-zinc-700 focus:border-accent"
-          />
-          <button
-            type="submit"
-            disabled={pending || cookieHeader.trim().length < 10}
-            className="w-full rounded-xl bg-accent px-4 py-3 text-sm font-semibold text-ink disabled:opacity-40"
-          >
-            {pending ? 'Enregistrement…' : 'Enregistrer la session'}
-          </button>
-          {message && <p className="text-[12px] text-zinc-400">{message}</p>}
-        </form>
+        {data?.lbcStatus === 'verification_required' && (
+          <p className="mt-2 rounded-xl border border-accent/30 bg-accent/10 px-3 py-2 text-[12px] text-accent-soft">
+            leboncoin demande un code de vérification. Connecte-toi une fois sur leboncoin.fr
+            depuis ce navigateur, puis relance un relevé.
+          </p>
+        )}
       </section>
 
       <button

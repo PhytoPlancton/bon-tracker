@@ -1,6 +1,6 @@
 import { MongoClient, type Collection, type Db } from 'mongodb';
 import { env } from './env';
-import type { Listing, PricePoint, Run, SavedSearch } from './types';
+import type { Listing, PricePoint, Run, SavedSearch, User } from './types';
 
 /**
  * Un seul client pour tout le process, avec un pool volontairement étroit :
@@ -11,6 +11,7 @@ import type { Listing, PricePoint, Run, SavedSearch } from './types';
 const globalForMongo = globalThis as unknown as {
   _mongoClient?: MongoClient;
   _mongoIndexes?: Promise<void>;
+  _mongoBaseline?: Promise<void>;
 };
 
 function getClient(): MongoClient {
@@ -38,22 +39,43 @@ export async function getDb(): Promise<Db> {
   return db;
 }
 
+/**
+ * Prépare la base une seule fois par processus : reprise d'une installation
+ * antérieure, rattachement des données sans propriétaire. Chargée à la
+ * demande, car elle s'appuie elle-même sur cette connexion.
+ */
+async function ensureBaselineOnce(): Promise<void> {
+  if (!globalForMongo._mongoBaseline) {
+    globalForMongo._mongoBaseline = import('./bootstrap')
+      .then((module) => module.ensureBaseline())
+      .catch((error) => {
+        globalForMongo._mongoBaseline = undefined;
+        throw error;
+      });
+  }
+  await globalForMongo._mongoBaseline;
+}
+
 async function ensureIndexes(db: Db): Promise<void> {
+  // Les identifiants du site ne sont uniques qu'au sein d'un compte : deux
+  // personnes peuvent suivre la même annonce, chacune avec son historique.
   await Promise.all([
     db.collection('users').createIndex({ email: 1 }, { unique: true }),
+    db.collection('users').createIndex({ uid: 1 }, { unique: true }),
     db.collection('secrets').createIndex({ key: 1 }, { unique: true }),
-    db.collection('listings').createIndex({ lbcId: 1 }, { unique: true }),
-    db.collection('listings').createIndex({ isActive: 1, lastSeenAt: -1 }),
-    db.collection('price_points').createIndex({ lbcId: 1, observedAt: 1 }),
-    db.collection('searches').createIndex({ lbcSearchId: 1 }, { unique: true }),
-    db.collection('runs').createIndex({ startedAt: -1 }),
+    db.collection('listings').createIndex({ uid: 1, lbcId: 1 }, { unique: true }),
+    db.collection('listings').createIndex({ uid: 1, isActive: 1, lastSeenAt: -1 }),
+    db.collection('price_points').createIndex({ uid: 1, lbcId: 1, observedAt: 1 }),
+    db.collection('searches').createIndex({ uid: 1, lbcSearchId: 1 }, { unique: true }),
+    db.collection('runs').createIndex({ uid: 1, startedAt: -1 }),
   ]);
 }
 
 export async function collections() {
   const db = await getDb();
+  await ensureBaselineOnce();
   return {
-    users: db.collection<{ email: string; passwordHash: string; createdAt: Date }>('users'),
+    users: db.collection<User>('users'),
     secrets: db.collection<{ key: string; ciphertext: string; iv: string; tag: string; updatedAt: Date }>('secrets'),
     listings: db.collection<Listing>('listings') as Collection<Listing>,
     pricePoints: db.collection<PricePoint>('price_points') as Collection<PricePoint>,

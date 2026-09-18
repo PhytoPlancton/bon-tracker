@@ -1,19 +1,11 @@
 'use client';
 
-import { Suspense, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useState } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 
-export default function LoginPage() {
-  return (
-    <Suspense fallback={null}>
-      <LoginForm />
-    </Suspense>
-  );
-}
-
-function LoginForm() {
+export default function RegisterPage() {
   const router = useRouter();
-  const params = useSearchParams();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -24,32 +16,34 @@ function LoginForm() {
     setPending(true);
     setError(null);
 
-    const response = await fetch('/api/auth/login', {
+    const response = await fetch('/api/auth/register', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ email, password }),
     });
 
     if (response.ok) {
-      router.replace(params.get('next') || '/');
+      router.replace('/');
       router.refresh();
       return;
     }
 
     const body = await response.json().catch(() => ({}));
-    setError(body.error ?? 'Connexion impossible');
+    setError(body.error ?? 'Inscription impossible');
     setPending(false);
   }
 
   return (
     <div className="flex min-h-dvh flex-col justify-center px-6 py-12">
       <div className="mx-auto w-full max-w-sm">
-        <div className="mb-8 flex flex-col items-center gap-3">
+        <div className="mb-8 flex flex-col items-center gap-3 text-center">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/icons/icon-192.png" alt="" className="h-16 w-16 rounded-2xl" />
-          <h1 className="text-xl font-semibold tracking-tight">Bon Tracker</h1>
-          <p className="text-sm text-zinc-500">Historique de prix des annonces suivies</p>
-          <p className="text-[12px] text-zinc-600">Avec tes identifiants leboncoin</p>
+          <h1 className="text-xl font-semibold tracking-tight">Créer un accès</h1>
+          <p className="text-sm text-zinc-500">
+            Utilise les identifiants de <strong className="text-zinc-400">ton compte leboncoin</strong>.
+            Ils servent à retrouver tes favoris, et te connecteront ici.
+          </p>
         </div>
 
         <form onSubmit={submit} className="space-y-3">
@@ -84,15 +78,27 @@ function LoginForm() {
             disabled={pending}
             className="w-full rounded-xl bg-accent px-4 py-3.5 text-base font-semibold text-ink disabled:opacity-50"
           >
-            {pending ? 'Connexion…' : 'Se connecter'}
+            {pending ? 'Vérification auprès de leboncoin…' : 'Créer mon accès'}
           </button>
+
+          {pending && (
+            <p className="text-center text-[12px] text-zinc-500">
+              Une vraie connexion est ouverte sur leboncoin pour vérifier tes identifiants.
+              Compte une trentaine de secondes.
+            </p>
+          )}
         </form>
 
         <p className="mt-6 text-center text-[13px] text-zinc-500">
-          Premier accès ?{' '}
-          <a href="/inscription" className="font-medium text-accent">
-            Créer mon compte
-          </a>
+          Déjà un accès ?{' '}
+          <Link href="/login" className="font-medium text-accent">
+            Se connecter
+          </Link>
+        </p>
+
+        <p className="mt-6 text-center text-[11px] leading-relaxed text-zinc-600">
+          Ton mot de passe est conservé chiffré : il permet de rouvrir ta session leboncoin
+          quand elle expire, sans quoi le suivi s’arrêterait.
         </p>
       </div>
     </div>

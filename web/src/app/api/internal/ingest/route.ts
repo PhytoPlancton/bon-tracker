@@ -19,6 +19,7 @@ const listingSchema = z.object({
 });
 
 const schema = z.object({
+  uid: z.string().min(1),
   source: z.string().regex(/^(favorites|search:[\w-]+)$/),
   listings: z.array(listingSchema).max(1000),
 });
@@ -34,6 +35,7 @@ export async function POST(request: Request) {
   }
 
   const result = await ingestListings(
+    parsed.data.uid,
     parsed.data.source as ListingSource,
     parsed.data.listings.map((item) => ({ ...item, price: item.price })),
   );

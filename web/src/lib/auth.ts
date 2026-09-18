@@ -10,8 +10,8 @@ function secret(): Uint8Array {
   return new TextEncoder().encode(env.sessionSecret);
 }
 
-export async function createSessionToken(email: string): Promise<string> {
-  return new SignJWT({ sub: email })
+export async function createSessionToken(uid: string): Promise<string> {
+  return new SignJWT({ sub: uid })
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
     .setExpirationTime(`${MAX_AGE_SECONDS}s`)
@@ -43,10 +43,20 @@ export async function clearSessionCookie(): Promise<void> {
   store.set(SESSION_COOKIE, '', { httpOnly: true, path: '/', maxAge: 0 });
 }
 
-export async function currentUser(): Promise<string | null> {
+/** Identifiant de l'utilisateur connecté, lu depuis le cookie de session. */
+export async function currentUid(): Promise<string | null> {
   const store = await cookies();
   const token = store.get(SESSION_COOKIE)?.value;
   return token ? verifySessionToken(token) : null;
+}
+
+/**
+ * Identifiant de l'utilisateur, ou une réponse 401 à renvoyer telle quelle.
+ * Le middleware protège déjà ces routes ; ceci garantit qu'aucune requête ne
+ * s'exécute sans propriétaire, même si un chemin lui échappait.
+ */
+export async function requireUid(): Promise<string | null> {
+  return currentUid();
 }
 
 /** Compare le jeton du worker en temps constant. */

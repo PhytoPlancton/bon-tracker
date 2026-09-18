@@ -1,10 +1,8 @@
 import { NextResponse } from 'next/server';
-import bcrypt from 'bcryptjs';
 import { z } from 'zod';
-import { collections } from '@/lib/mongo';
 import { createSessionToken, setSessionCookie } from '@/lib/auth';
 import { checkRateLimit, resetRateLimit } from '@/lib/rate-limit';
-import { ensureAdminUser } from '@/lib/bootstrap';
+import { findUserByEmail, verifyPassword } from '@/lib/users';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -14,6 +12,7 @@ const schema = z.object({
   password: z.string().min(1),
 });
 
+/** Connexion avec l'adresse et le mot de passe du compte leboncoin. */
 export async function POST(request: Request) {
   const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
   const limit = checkRateLimit(`login:${ip}`);
@@ -29,20 +28,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Requête invalide' }, { status: 400 });
   }
 
-  await ensureAdminUser();
-
-  const { users } = await collections();
-  const user = await users.findOne({ email: parsed.data.email.toLowerCase() });
-
-  // Hash factice pour que la réponse prenne le même temps qu'un compte existant.
-  const hash = user?.passwordHash ?? '$2a$12$invalidinvalidinvalidinvalidinvalidinvalidinvalidinvalidinv';
-  const ok = await bcrypt.compare(parsed.data.password, hash);
-
-  if (!user || !ok) {
+  const user = await findUserByEmail(parsed.data.email);
+  if (!(await verifyPassword(user, parsed.data.password))) {
     return NextResponse.json({ error: 'Identifiants incorrects' }, { status: 401 });
   }
 
   resetRateLimit(`login:${ip}`);
-  await setSessionCookie(await createSessionToken(user.email));
+  await setSessionCookie(await createSessionToken(user!.uid));
   return NextResponse.json({ ok: true });
 }
