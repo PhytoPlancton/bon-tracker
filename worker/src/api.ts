@@ -138,3 +138,15 @@ export function ingestMarketAds(queryId: string, ads: ScrapedListing[]) {
     body: JSON.stringify({ queryId, ads }),
   });
 }
+
+/**
+ * Au démarrage : les collectes restées en cours sont mortes avec l'ancien
+ * collecteur. Seules celles antérieures à ce démarrage sont visées, pour ne
+ * pas tuer une demande arrivée entre-temps.
+ */
+export function abandonMarketQueries(before: Date) {
+  return call<{ ok: boolean; abandoned: number }>('/api/internal/market/abandon', {
+    method: 'POST',
+    body: JSON.stringify({ before: before.toISOString() }),
+  });
+}

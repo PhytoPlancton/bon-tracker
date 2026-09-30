@@ -17,6 +17,28 @@ const MAX_ACTIVE = 3;
  */
 const STALE_AFTER = 20 * 60 * 1000;
 
+/** Collectes laissées en cours par un collecteur qui vient de redémarrer. */
+export async function abandonQueries(before: Date): Promise<number> {
+  const { marketQueries } = await collections();
+  const result = await marketQueries.updateMany(
+    {
+      status: { $in: ['queued', 'running'] },
+      $or: [
+        { updatedAt: { $lt: before } },
+        { updatedAt: { $exists: false }, createdAt: { $lt: before } },
+      ],
+    },
+    {
+      $set: {
+        status: 'error',
+        error: 'Le collecteur a redémarré pendant la collecte. Actualise pour la relancer.',
+        updatedAt: new Date(),
+      },
+    },
+  );
+  return result.modifiedCount;
+}
+
 /** Rend la main sur les collectes mortes, pour qu'on puisse les relancer. */
 async function settleStale(): Promise<void> {
   const { marketQueries } = await collections();

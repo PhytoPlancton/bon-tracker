@@ -243,6 +243,24 @@ try {
   check('une collecte relancée n’est pas aussitôt déclarée morte', fresh.estimation.status === 'queued', fresh.estimation.status);
   await call('DELETE', `/api/estimations/${dead.id}`, alice);
 
+  console.log('\nRedémarrage du collecteur');
+  const orphan = await call('POST', '/api/estimations', alice, { brand: 'Porsche', model: '911', yearMin: 1998, yearMax: 2004 });
+  await call('PATCH', `/api/internal/market/queries/${orphan.id}`, worker, { status: 'running', pages: 3, ads: 90 });
+  await new Promise((r) => setTimeout(r, 20));
+  const restartedAt = new Date().toISOString();
+  await new Promise((r) => setTimeout(r, 20));
+  const newcomer = await call('POST', '/api/estimations', alice, { brand: 'Porsche', model: '911', yearMin: 2005, yearMax: 2012 });
+  const abandon = await call('POST', '/api/internal/market/abandon', worker, { before: restartedAt });
+  check('collectes d’avant le redémarrage abandonnées', abandon.abandoned === 2, abandon); // celle-ci et celle de bob, restée en attente plus haut
+  const orphanState = await call('GET', `/api/estimations/${orphan.id}`, alice);
+  check('et affichée en échec relançable', orphanState.estimation.status === 'error' && /redémarré/.test(orphanState.estimation.error), orphanState.estimation);
+  const newcomerState = await call('GET', `/api/estimations/${newcomer.id}`, alice);
+  check('demande arrivée après le redémarrage épargnée', newcomerState.estimation.status === 'queued', newcomerState.estimation.status);
+  const abandonForbidden = await raw('POST', '/api/internal/market/abandon', { 'content-type': 'application/json' }, { before: restartedAt });
+  check('abandon réservé au collecteur', abandonForbidden.status === 403, abandonForbidden.status);
+  await call('DELETE', `/api/estimations/${orphan.id}`, alice);
+  await call('DELETE', `/api/estimations/${newcomer.id}`, alice);
+
   console.log('\nRelance et suppression');
   const jobsBefore = jobs.length;
   const refreshed = await raw('POST', `/api/estimations/${created.id}`, alice, {});
