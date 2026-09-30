@@ -17,8 +17,17 @@ export interface Ad {
   price: number;
   km: number | null;
   year: number | null;
+  /** Motorisation, une fois ramenée à son moteur par `harmonize`. */
   version: string | null;
   location: string | null;
+  imageUrl?: string | null;
+  sellerType?: 'pro' | 'private' | null;
+  gearbox?: string | null;
+  fuel?: string | null;
+  /** La motorisation vient du titre, faute d'être renseignée. */
+  versionGuessed?: boolean;
+  /** Ce qui rend l'annonce incomparable : volant à droite, accident, panne. */
+  flags?: string[];
 }
 
 /** Sous ce prix, c'est une pièce, une épave ou un prix d'appel. */
@@ -119,13 +128,119 @@ function median(values: number[]): number {
  * Écarte ce qui n'est pas une voiture à vendre au prix du marché : pièces,
  * épaves, prix d'appel, fautes de frappe. Un facteur trois de part et d'autre
  * de la médiane laisse passer toute la diversité réelle d'un modèle.
+ *
+ * Les annonces signalées (volant à droite, accident, panne) sont mises à part :
+ * leur prix est bas pour une raison qui ne concerne pas les autres voitures.
  */
-export function plausible(ads: Ad[]): { kept: Ad[]; excluded: number } {
-  const priced = ads.filter((ad) => ad.price >= MIN_PRICE);
-  if (!priced.length) return { kept: [], excluded: ads.length };
+export function plausible(ads: Ad[]): { kept: Ad[]; excluded: number; flagged: number } {
+  const clean = ads.filter((ad) => !ad.flags?.length);
+  const flagged = ads.length - clean.length;
+  const priced = clean.filter((ad) => ad.price >= MIN_PRICE);
+  if (!priced.length) return { kept: [], excluded: clean.length, flagged };
   const reference = median(priced.map((ad) => ad.price));
   const kept = priced.filter((ad) => ad.price >= reference / 3 && ad.price <= reference * 3);
-  return { kept, excluded: ads.length - kept.length };
+  return { kept, excluded: clean.length - kept.length, flagged };
+}
+
+// ---------------------------------------------------------------------------
+// Harmonisation
+// ---------------------------------------------------------------------------
+
+/** Boîtes automatiques telles que les versions les écrivent. */
+const AUTOMATIC =
+  /\b(tip ?tronic( s)?|pdk|bva\d*|bvr|dsg\d*|s ?tronic|edc\d*|eat\d*|dct|steptronic|multitronic|automatique|auto)\b/gi;
+
+/**
+ * Ramène une version publiée à son moteur. Le site préfixe souvent la
+ * finition (« S_Cayman 3.4 S », « Base_Cayman 2.7 ») et mêle la boîte au
+ * moteur (« Cayman 3.4 S TipTronic S ») : sans cela, un même moteur se
+ * disperse en une douzaine d'entrées de deux ou trois annonces.
+ */
+export function engineOf(version: string | null | undefined): { engine: string | null; automatic: boolean } {
+  if (!version) return { engine: null, automatic: false };
+  const bare = version.includes('_') ? version.slice(version.lastIndexOf('_') + 1) : version;
+  const automatic = new RegExp(AUTOMATIC.source, 'i').test(bare);
+  const engine = bare.replace(AUTOMATIC, ' ').replace(/\s+/g, ' ').trim();
+  return { engine: engine || null, automatic };
+}
+
+const FLAGS: { label: string; pattern: RegExp }[] = [
+  { label: 'Volant à droite', pattern: /\b(rhd|conduite a droite|volant a droite|anglaise)\b/ },
+  { label: 'Accidentée', pattern: /\b(accidentee?|sinistree?|vge|vei|epave)\b/ },
+  { label: 'Moteur HS / pour pièces', pattern: /\b(moteur hs|moteur casse|hs|pour pieces|a restaurer)\b/ },
+];
+
+/**
+ * Prépare les annonces d'un modèle pour la comparaison : moteur et boîte
+ * séparés, moteur déduit du titre quand il manque, annonces à risque
+ * signalées. Fonction pure, appliquée à la lecture : les données collectées
+ * restent telles que le site les a publiées.
+ */
+export function harmonize(ads: Ad[]): Ad[] {
+  const prepared = ads.map((ad) => {
+    const { engine, automatic } = engineOf(ad.version);
+    const title = words(ad.title);
+    const flags = FLAGS.filter((flag) => flag.pattern.test(title)).map((flag) => flag.label);
+    return { ...ad, version: engine, gearbox: normalizeGearbox(ad.gearbox, automatic), flags };
+  });
+
+  const engines = [...new Set(prepared.map((ad) => ad.version).filter((v): v is string => Boolean(v)))];
+  const counts = new Map<string, number>();
+  for (const ad of prepared) if (ad.version) counts.set(ad.version, (counts.get(ad.version) ?? 0) + 1);
+
+  return prepared.map((ad) => {
+    if (ad.version) return ad;
+    const guess = guessEngine(ad.title, engines, counts);
+    return guess ? { ...ad, version: guess, versionGuessed: true } : ad;
+  });
+}
+
+function normalizeGearbox(value: string | null | undefined, automatic: boolean): string | null {
+  if (automatic) return 'Automatique';
+  if (!value) return null;
+  return /auto/i.test(value) ? 'Automatique' : /manu/i.test(value) ? 'Manuelle' : value;
+}
+
+function words(text: string): string {
+  return ` ${text
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/(\d)[.,](\d)/g, '$1.$2')
+    // « 2,7L » ou « 245ch » : le chiffre se lit à part de son unité.
+    .replace(/(\d)([a-z])/g, '$1 $2')
+    .replace(/[^a-z0-9.]+/g, ' ')
+    .trim()} `;
+}
+
+/**
+ * Retrouve le moteur dans le titre, parmi ceux que portent les autres
+ * annonces du même modèle. Seuls comptent les mots qui distinguent un moteur
+ * des autres — cylindrée, lettres de version — ; une cylindrée qui contredit
+ * suffit à écarter un candidat, une égalité à ne rien conclure.
+ */
+function guessEngine(title: string, engines: string[], counts: Map<string, number>): string | null {
+  if (!engines.length) return null;
+  const text = words(title);
+  const tokens = engines.map((engine) => words(engine).trim().split(' '));
+  const shared = tokens.reduce((common, list) => common.filter((token) => list.includes(token)));
+  const displacement = text.match(/ (\d\.\d) /)?.[1] ?? null;
+
+  const scored = engines
+    .map((engine, index) => {
+      const own = tokens[index].filter((token) => !shared.includes(token));
+      const cc = own.find((token) => /^\d\.\d$/.test(token)) ?? null;
+      if (displacement && cc && cc !== displacement) return null;
+      const score = own.filter((token) => text.includes(` ${token} `)).length;
+      return { engine, score, size: own.length, count: counts.get(engine) ?? 0 };
+    })
+    .filter((item): item is NonNullable<typeof item> => item !== null && item.score > 0)
+    .sort((a, b) => b.score - a.score || a.size - b.size || b.count - a.count);
+
+  if (!scored.length) return null;
+  const [best, second] = scored;
+  if (second && second.score === best.score && second.size === best.size) return null;
+  return best.engine;
 }
 
 // ---------------------------------------------------------------------------
@@ -212,6 +327,8 @@ export function estimate(target: Target, pool: Ad[], excludeId?: string): Estima
 export interface Analysis {
   count: number;
   excluded: number;
+  /** Annonces à risque mises à part : volant à droite, accident, panne. */
+  flagged: number;
   median: number;
   p25: number;
   p75: number;
@@ -228,7 +345,7 @@ export interface Analysis {
 }
 
 export function analyze(ads: Ad[]): Analysis | null {
-  const { kept, excluded } = plausible(ads);
+  const { kept, excluded, flagged } = plausible(ads);
   if (kept.length < MIN_COMPARABLES) return null;
 
   const prices = kept.map((ad) => ad.price).sort((a, b) => a - b);
@@ -243,6 +360,7 @@ export function analyze(ads: Ad[]): Analysis | null {
   return {
     count: kept.length,
     excluded,
+    flagged,
     median: quantile(prices, 0.5),
     p25: quantile(prices, 0.25),
     p75: quantile(prices, 0.75),

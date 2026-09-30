@@ -33,6 +33,7 @@ export default function EstimationPage({ params }: { params: Promise<{ id: strin
   const { data, loading, error, reload } = useApi<Detail>(`/api/estimations/${id}`);
 
   const [version, setVersion] = useState(ALL);
+  const [gearbox, setGearbox] = useState(ALL);
   const [year, setYear] = useState('');
   const [km, setKm] = useState('');
   const [refreshing, setRefreshing] = useState(false);
@@ -50,14 +51,25 @@ export default function EstimationPage({ params }: { params: Promise<{ id: strin
   const ads = useMemo(() => data?.ads ?? [], [data]);
   const overall = useMemo(() => analyze(ads), [ads]);
   // Épaves, pièces et prix aberrants écrasent le graphique et faussent tout.
-  const kept = useMemo(() => plausible(ads).kept, [ads]);
+  const allKept = useMemo(() => plausible(ads).kept, [ads]);
+  // Les annonces à risque restent visibles, mais hors de tout calcul.
+  const allRisky = useMemo(() => ads.filter((ad) => ad.flags?.length && ad.price >= 500), [ads]);
+
+  const gearboxes = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const ad of allKept) if (ad.gearbox) counts.set(ad.gearbox, (counts.get(ad.gearbox) ?? 0) + 1);
+    return [...counts.entries()].sort((a, b) => b[1] - a[1]);
+  }, [allKept]);
+
+  // La boîte change le prix d'une même voiture : filtrée, elle vaut pour tout
+  // le reste de la page, estimation comprise.
+  const kept = useMemo(() => withGearbox(allKept, gearbox), [allKept, gearbox]);
+  const risky = useMemo(() => withGearbox(allRisky, gearbox), [allRisky, gearbox]);
 
   // Le filtre de motorisation recalcule tout : médiane, courbe et affaires
   // n'ont de sens qu'entre voitures du même moteur.
-  const filtered = useMemo(
-    () => (version === ALL ? kept : kept.filter((ad) => (ad.version ?? UNKNOWN) === version)),
-    [kept, version],
-  );
+  const filtered = useMemo(() => withVersion(kept, version), [kept, version]);
+  const shown = useMemo(() => [...filtered, ...withVersion(risky, version)], [filtered, risky, version]);
   const analysis = useMemo(() => analyze(filtered), [filtered]);
 
   const versionOrder = useMemo(() => overall?.versions.map((item) => item.name) ?? [], [overall]);
@@ -186,6 +198,24 @@ export default function EstimationPage({ params }: { params: Promise<{ id: strin
               </select>
             </label>
 
+            {gearboxes.length > 1 && (
+              <label className="mt-2 block">
+                <span className="sr-only">Boîte</span>
+                <select
+                  value={gearbox}
+                  onChange={(event) => setGearbox(event.target.value)}
+                  className="w-full rounded-xl border border-ink-line bg-ink px-3 py-2.5 text-[14px] text-zinc-100 focus:border-accent focus:outline-none"
+                >
+                  <option value={ALL}>Toutes boîtes</option>
+                  {gearboxes.map(([name, count]) => (
+                    <option key={name} value={name}>
+                      {name} ({count})
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+
             {analysis ? (
               <>
                 <div className="mt-4 flex items-end justify-between gap-3">
@@ -207,7 +237,10 @@ export default function EstimationPage({ params }: { params: Promise<{ id: strin
                   {analysis.count} annonces
                   {overall.excluded > 0 &&
                     version === ALL &&
-                    ` · ${overall.excluded} écartée${overall.excluded > 1 ? 's' : ''} (épaves, pièces, prix aberrants)`}
+                    gearbox === ALL &&
+                    ` · ${overall.excluded} écartée${overall.excluded > 1 ? 's' : ''} (prix aberrants)`}
+                  {risky.length > 0 &&
+                    ` · ${risky.length} à risque hors calculs (volant à droite, accident, panne)`}
                 </p>
 
                 {version === ALL && several && (
@@ -232,7 +265,7 @@ export default function EstimationPage({ params }: { params: Promise<{ id: strin
 
                 <div className="mt-4 -mx-1">
                   <PriceKmChart
-                    points={filtered}
+                    points={shown}
                     trends={trends}
                     colorBy={shownColor}
                     versionOrder={versionOrder}
@@ -256,7 +289,11 @@ export default function EstimationPage({ params }: { params: Promise<{ id: strin
             <h2 className="text-[15px] font-medium text-zinc-100">Ta voiture</h2>
             <p className="mb-3 text-[11px] text-zinc-500">
               Sa valeur d’après les annonces qui lui ressemblent le plus
-              {version !== ALL && version !== UNKNOWN ? ` (${version})` : ''}.
+              {[version !== ALL && version !== UNKNOWN ? version : null, gearbox !== ALL ? gearbox : null]
+                .filter(Boolean)
+                .map((part) => ` · ${part}`)
+                .join('')}
+              .
             </p>
             <div className="grid grid-cols-2 gap-3">
               <input
@@ -349,6 +386,14 @@ export default function EstimationPage({ params }: { params: Promise<{ id: strin
   );
 }
 
+function withGearbox(list: Ad[], gearbox: string): Ad[] {
+  return gearbox === ALL ? list : list.filter((ad) => ad.gearbox === gearbox);
+}
+
+function withVersion(list: Ad[], version: string): Ad[] {
+  return version === ALL ? list : list.filter((ad) => (ad.version ?? UNKNOWN) === version);
+}
+
 const INPUT =
   'w-full rounded-xl border border-ink-line bg-ink px-3 py-2.5 text-[15px] text-zinc-100 placeholder:text-zinc-600 focus:border-accent focus:outline-none';
 
@@ -369,7 +414,13 @@ function AdRow({ ad, note }: { ad: Ad; note?: string }) {
         <div className="min-w-0">
           <div className="truncate text-[13px] text-zinc-200">{ad.title}</div>
           <div className="truncate text-[11px] text-zinc-500">
-            {[ad.year, ad.km !== null ? `${ad.km.toLocaleString('fr-FR')} km` : null, ad.version, ad.location]
+            {[
+              ad.year,
+              ad.km !== null ? `${ad.km.toLocaleString('fr-FR')} km` : null,
+              ad.version ? `${ad.version}${ad.versionGuessed ? ' (titre)' : ''}` : null,
+              ad.gearbox,
+              ad.location,
+            ]
               .filter(Boolean)
               .join(' · ')}
           </div>

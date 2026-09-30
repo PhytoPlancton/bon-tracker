@@ -289,10 +289,12 @@ function extractAttributes(record: Record<string, unknown>): Record<string, stri
 function extractImage(record: Record<string, unknown>): string | null {
   const images = record.images as Record<string, unknown> | undefined;
   if (images) {
-    if (typeof images.thumb_url === 'string') return images.thumb_url;
-    if (typeof images.small_url === 'string') return images.small_url;
-    const urls = images.urls_thumb ?? images.urls;
+    // La photo en taille d'annonce d'abord : la vignette, minuscule, ne
+    // montre rien une fois affichée en fiche.
+    const urls = images.urls ?? images.urls_large ?? images.urls_thumb;
     if (Array.isArray(urls) && typeof urls[0] === 'string') return urls[0];
+    if (typeof images.small_url === 'string') return images.small_url;
+    if (typeof images.thumb_url === 'string') return images.thumb_url;
   }
   return typeof record.image_url === 'string' ? record.image_url : null;
 }

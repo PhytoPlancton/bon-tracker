@@ -104,6 +104,14 @@ function market() {
     ads.push(ad(`b${i}`, 'Boxster 2.5', year, km, 15_000 - km * 0.03));
   }
   ads.push(ad('affaire', 'Boxster 3.2 S', 2002, 100_000, 12_000));
+  // Tels que le site les publie : finition en préfixe, boîte mêlée au moteur,
+  // volant à droite, motorisation absente mais écrite dans le titre.
+  ads.push(ad('prefixe', 'S_Boxster 3.2 S', 2001, 110_000, 21_700));
+  ads.push(ad('tiptronic', 'Boxster 3.2 S TipTronic S', 2002, 90_000, 23_000));
+  ads.push({ ...ad('rhd', 'Boxster 3.2 S', 2002, 100_000, 9_000), title: 'Porsche Boxster S 3.2 RHD' });
+  const titled = ad('titre', 'Boxster 2.5', 1998, 120_000, 11_400);
+  delete titled.attributes.u_car_version;
+  ads.push({ ...titled, title: 'Porsche Boxster 2,5L 204ch' });
   ads.push(ad('epave', 'Boxster 2.5', 1998, 250_000, 1_500));
   ads.push({ ...ad('sanskm', 'Boxster 3.2 S', 2001, 0, 19_000), attributes: { u_car_version: 'Boxster 3.2 S', regdate: '2001', u_car_brand: 'PORSCHE', u_car_model: 'PORSCHE_Boxster' } });
   return ads;
@@ -168,12 +176,18 @@ try {
   check('collecte terminée', done.estimation.status === 'done' && done.estimation.collectedAt, done.estimation);
   check('toutes les annonces rattachées', done.ads.length === ads.length && done.estimation.ads === ads.length, done.ads.length);
   check('épave écartée', analysis.excluded === 1 && !done.estimate, analysis.excluded);
-  check('deux motorisations, la plus courante d’abord', analysis.versions[0]?.name === 'Boxster 3.2 S' && analysis.versions[0]?.count === 32 && analysis.versions[1]?.name === 'Boxster 2.5' && analysis.versions[1]?.count === 20, analysis.versions);
+  check('deux motorisations, la plus courante d’abord', analysis.versions.length === 2 && analysis.versions[0]?.name === 'Boxster 3.2 S' && analysis.versions[0]?.count === 34 && analysis.versions[1]?.name === 'Boxster 2.5' && analysis.versions[1]?.count === 21, analysis.versions);
   check('années couvertes', analysis.yearMin === 1997 && analysis.yearMax === 2004, [analysis.yearMin, analysis.yearMax]);
   check('courbe du marché', analysis.trend.length >= 4, analysis.trend);
   check('la courbe descend avec les kilomètres', analysis.trend[0].price > analysis.trend[analysis.trend.length - 1].price, analysis.trend);
   check('l’affaire est repérée en tête', analysis.deals[0]?.lbcId === 'affaire', analysis.deals.map((d) => d.lbcId));
   check('écart de l’affaire cohérent', analysis.deals[0]?.ratio > 0.3 && analysis.deals[0]?.ratio < 0.6, analysis.deals[0]);
+  const byId = (id) => done.ads.find((a) => a.lbcId === id);
+  check('finition en préfixe ramenée au moteur', byId('prefixe')?.version === 'Boxster 3.2 S', byId('prefixe'));
+  check('boîte séparée du moteur', byId('tiptronic')?.version === 'Boxster 3.2 S' && byId('tiptronic')?.gearbox === 'Automatique', byId('tiptronic'));
+  check('moteur déduit du titre', byId('titre')?.version === 'Boxster 2.5' && byId('titre')?.versionGuessed === true, byId('titre'));
+  check('volant à droite signalé', byId('rhd')?.flags?.includes('Volant à droite'), byId('rhd'));
+  check('annonce à risque hors des affaires', !analysis.deals.some((d) => d.lbcId === 'rhd') && analysis.flagged === 1, { flagged: analysis.flagged, deals: analysis.deals.map((d) => d.lbcId) });
   check('annonce sans kilométrage conservée', done.ads.some((a) => a.lbcId === 'sanskm' && a.km === null), null);
   check('caractéristiques lues', done.ads.find((a) => a.lbcId === 's0')?.version === 'Boxster 3.2 S' && done.ads.find((a) => a.lbcId === 's0')?.year === 2000, done.ads.find((a) => a.lbcId === 's0'));
 

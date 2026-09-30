@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { currentUid } from '@/lib/auth';
-import { analyze, estimate, plausible } from '@/lib/estimation';
+import { analyze, estimate, harmonize, plausible } from '@/lib/estimation';
 import { deleteQuery, getQuery, loadAds, refreshQuery } from '@/lib/market-store';
 
 export const runtime = 'nodejs';
@@ -20,7 +20,7 @@ export async function GET(request: Request, context: Context) {
   const query = await getQuery(uid, id);
   if (!query) return NextResponse.json({ error: 'Estimation inconnue' }, { status: 404 });
 
-  const ads = await loadAds(query.adIds);
+  const ads = harmonize(await loadAds(query.adIds));
   const { kept } = plausible(ads);
 
   const url = new URL(request.url);

@@ -94,8 +94,16 @@ Remplace la lecture par segment : on choisit une voiture, on voit ce qu'elle vau
       km proches, élargis seulement faute de mieux, silence sous 4 voitures)
 - [x] Annonces à 15 % ou plus sous leurs propres comparables
 - [x] 42 vérifications (tests/estimation.mjs), dont réutilisation et cloisonnement
-- [ ] Éprouver sur leboncoin réel : présence de `u_car_version` dans les pages
-      de recherche (sinon motorisation « Non précisée » partout)
+- [x] Éprouvé sur leboncoin réel : 187 Cayman 2006–2008, `u_car_version`
+      présent sur 80 % des annonces
+- [x] Motorisations regroupées (préfixe de finition retiré, boîte séparée),
+      moteur déduit du titre quand il manque, filtre Boîte
+- [x] Annonces à risque (volant à droite, accident, panne) visibles mais hors
+      de tout calcul
+- [x] Fiche au survol / au toucher : photo, prix, km, boîte, vendeur, écart à
+      la médiane au même km
+- [x] Zoom : Tout / Cœur du marché / Autour de ta voiture, glisser pour une
+      plage de km, axe des prix recalé sur les points visibles
 
 ## Hors scope V1
 Alertes e-mail/Telegram, multi-utilisateur, application native.

@@ -337,6 +337,10 @@ function toAd(doc: MarketAd): Ad {
     year: doc.year ?? null,
     version: doc.version ?? null,
     location: doc.location ?? null,
+    imageUrl: doc.imageUrl ?? null,
+    sellerType: doc.sellerType ?? null,
+    gearbox: doc.gearbox ?? null,
+    fuel: doc.fuel ?? null,
   };
 }
 

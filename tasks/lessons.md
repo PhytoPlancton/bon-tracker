@@ -132,6 +132,9 @@ Format : [date] | ce qui a mal tourné | règle pour l'éviter
 - [2026-09-30] | La connexion au Chrome dédié était faite hors du bloc qui signale les échecs : Chrome fermé après un redémarrage, l'estimation restait « en cours, page 0 » pour toujours. |
   Toute étape d'une tâche de fond, connexion comprise, est dans le bloc qui rapporte l'échec ; et toute tâche de fond a un délai au-delà duquel elle est déclarée morte.
 
+- [2026-09-30] | Les motorisations étaient prises telles que publiées : « S_Cayman 3.4 S », « Cayman 3.4 S TipTronic S »… un même moteur éclaté en treize entrées, et les meilleures « affaires » étaient des volants à droite. |
+  Regarder les vraies données avant de concevoir les regroupements ; séparer ce qui change le prix pour une raison propre à l'annonce (boîte, RHD, accident) de ce qui définit le modèle.
+
 ## Règles permanentes du projet
 - Un seul client MongoDB, `maxPoolSize` bas : le quota de 500 connexions est
   partagé entre plusieurs applications.
