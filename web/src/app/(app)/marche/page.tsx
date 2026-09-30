@@ -1,246 +1,218 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { PriceDistribution } from '@/components/price-distribution';
+import { useRouter } from 'next/navigation';
 import { useApi } from '@/lib/client';
-import { formatPrice } from '@/lib/format';
+import { relativeTime, yearsLabel } from '@/lib/format';
 
-interface MarketListing {
-  lbcId: string;
-  title: string;
-  url: string;
-  location: string | null;
-  price: number;
-  gap: number;
-  gapRatio: number;
-  firstSeenAt: string;
-  drops: number;
-  totalDrop: number;
-  lastDropAt: string | null;
-}
-
-interface Segment {
-  source: string;
-  name: string;
-  details: string | null;
-  active: number;
-  stats: {
-    median: number;
-    p25: number;
-    p75: number;
-    min: number;
-    max: number;
-    medianBefore: number | null;
-    trend: number | null;
-  } | null;
-  lifespan: { median: number; sample: number } | null;
-  deals: MarketListing[];
-  motivated: MarketListing[];
-  prices: { lbcId: string; price: number; title: string; url: string }[];
+interface Estimation {
+  id: string;
+  brand: string;
+  model: string;
+  yearMin: number | null;
+  yearMax: number | null;
+  status: 'queued' | 'running' | 'done' | 'error';
+  pages: number;
+  ads: number;
+  error: string | null;
+  collectedAt: string | null;
 }
 
 export default function MarketPage() {
-  const { data, loading } = useApi<{ segments: Segment[] }>('/api/market');
-  const segments = data?.segments ?? [];
-  const [openSegment, setOpenSegment] = useState<string | null>(null);
+  const router = useRouter();
+  const { data, loading, reload } = useApi<{ estimations: Estimation[] }>('/api/estimations');
+  const { data: catalogue } = useApi<{ brands: { brand: string; models: string[] }[] }>(
+    '/api/estimations/catalogue',
+  );
+
+  const [brand, setBrand] = useState('');
+  const [model, setModel] = useState('');
+  const [yearMin, setYearMin] = useState('');
+  const [yearMax, setYearMax] = useState('');
+  const [sending, setSending] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  const estimations = data?.estimations ?? [];
+  const busy = estimations.some((item) => item.status === 'queued' || item.status === 'running');
+
+  // Tant qu'une collecte avance, la liste se rafraîchit d'elle-même.
+  useEffect(() => {
+    if (!busy) return;
+    const timer = setInterval(() => void reload(), 4000);
+    return () => clearInterval(timer);
+  }, [busy, reload]);
+
+  const models =
+    catalogue?.brands.find((item) => item.brand.toLowerCase() === brand.trim().toLowerCase())?.models ?? [];
+
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
+    setSending(true);
+    setMessage(null);
+    try {
+      const response = await fetch('/api/estimations', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          brand,
+          model,
+          yearMin: yearMin ? Number(yearMin) : null,
+          yearMax: yearMax ? Number(yearMax) : null,
+        }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setMessage(body.error ?? `Erreur ${response.status}`);
+        return;
+      }
+      router.push(`/marche/${body.id}`);
+    } finally {
+      setSending(false);
+    }
+  }
 
   return (
     <>
       <header className="pb-4 pt-1">
         <h1 className="text-2xl font-semibold tracking-tight">Marché</h1>
         <p className="text-xs text-zinc-500">
-          Ce que valent réellement les annonces que tu suis.
+          Combien vaut vraiment une voiture, d’après toutes ses annonces leboncoin.
         </p>
       </header>
 
-      {loading ? (
-        <div className="space-y-3">
-          {[0, 1].map((index) => (
-            <div key={index} className="h-56 animate-pulse rounded-2xl border border-ink-line bg-ink-soft" />
-          ))}
+      <form onSubmit={submit} className="space-y-3 rounded-2xl border border-ink-line bg-ink-soft p-4">
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Marque">
+            <input
+              value={brand}
+              onChange={(event) => setBrand(event.target.value)}
+              list="brands"
+              placeholder="Porsche"
+              required
+              autoCapitalize="words"
+              className={INPUT}
+            />
+          </Field>
+          <Field label="Modèle">
+            <input
+              value={model}
+              onChange={(event) => setModel(event.target.value)}
+              list="models"
+              placeholder="Boxster"
+              required
+              autoCapitalize="words"
+              className={INPUT}
+            />
+          </Field>
+          <Field label="Année min.">
+            <input
+              value={yearMin}
+              onChange={(event) => setYearMin(event.target.value.replace(/\D/g, '').slice(0, 4))}
+              inputMode="numeric"
+              placeholder="1997"
+              className={INPUT}
+            />
+          </Field>
+          <Field label="Année max.">
+            <input
+              value={yearMax}
+              onChange={(event) => setYearMax(event.target.value.replace(/\D/g, '').slice(0, 4))}
+              inputMode="numeric"
+              placeholder="2004"
+              className={INPUT}
+            />
+          </Field>
         </div>
-      ) : segments.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-ink-line px-5 py-10 text-center text-sm text-zinc-500">
-            Aucun segment à analyser. Le marché se lit par recherche : active-en une
-          dans l’onglet Recherches, puis lance un relevé.
+
+        <datalist id="brands">
+          {catalogue?.brands.map((item) => <option key={item.brand} value={item.brand} />)}
+        </datalist>
+        <datalist id="models">
+          {models.map((name) => <option key={name} value={name} />)}
+        </datalist>
+
+        <p className="text-[11px] leading-relaxed text-zinc-500">
+          Les années cernent la génération (ex. Boxster 986 : 1997–2004). La motorisation se
+          choisit ensuite, sur le graphique.
+        </p>
+
+        {message && <p className="text-[12px] text-up">{message}</p>}
+
+        <button
+          type="submit"
+          disabled={sending}
+          className="w-full rounded-xl bg-accent py-3 text-[15px] font-semibold text-black disabled:opacity-50"
+        >
+          {sending ? 'Envoi…' : 'Estimer ce modèle'}
+        </button>
+      </form>
+
+      <h2 className="mb-2 mt-6 px-1 text-[11px] font-medium uppercase tracking-wide text-zinc-500">
+        Mes estimations
+      </h2>
+
+      {loading ? (
+        <div className="h-20 animate-pulse rounded-2xl border border-ink-line bg-ink-soft" />
+      ) : estimations.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-ink-line px-5 py-8 text-center text-sm text-zinc-500">
+          Aucune pour l’instant. Choisis une voiture ci-dessus.
         </div>
       ) : (
-        <div className="space-y-3">
-          {segments.map((segment) => (
-            <SegmentCard
-              key={segment.source}
-              segment={segment}
-              open={openSegment === segment.source}
-              onToggle={() =>
-                setOpenSegment(openSegment === segment.source ? null : segment.source)
-              }
-            />
+        <ul className="space-y-2">
+          {estimations.map((item) => (
+            <li key={item.id}>
+              <Link
+                href={`/marche/${item.id}`}
+                className="flex items-center justify-between gap-3 rounded-2xl border border-ink-line bg-ink-soft px-4 py-3 active:bg-ink-line"
+              >
+                <div className="min-w-0">
+                  <div className="truncate text-[15px] font-medium text-zinc-100">
+                    {item.brand} {item.model}
+                  </div>
+                  <div className="truncate text-[11px] text-zinc-500">{yearsLabel(item)}</div>
+                </div>
+                <StatusBadge item={item} />
+              </Link>
+            </li>
           ))}
-        </div>
+        </ul>
       )}
-
-      <p className="mt-4 px-1 text-[11px] leading-relaxed text-zinc-600">
-        Chaque segment correspond à une de tes recherches, donc à un modèle et une
-        tranche d’années. À l’intérieur, les prix restent sensibles à l’état et au
-        kilométrage : une annonce sous le marché peut l’être pour de bonnes raisons.
-        Ces repères disent où regarder, pas quoi acheter.
-      </p>
     </>
   );
 }
 
-function SegmentCard({
-  segment,
-  open,
-  onToggle,
-}: {
-  segment: Segment;
-  open: boolean;
-  onToggle: () => void;
-}) {
-  const { stats } = segment;
+const INPUT =
+  'w-full rounded-xl border border-ink-line bg-ink px-3 py-2.5 text-[15px] text-zinc-100 placeholder:text-zinc-600 focus:border-accent focus:outline-none';
 
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <section className="overflow-hidden rounded-2xl border border-ink-line bg-ink-soft">
-      <button onClick={onToggle} className="w-full px-4 pt-4 text-left">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <h2 className="truncate text-[15px] font-medium text-zinc-100">{segment.name}</h2>
-            {segment.details && (
-              <p className="mt-0.5 truncate text-[11px] text-zinc-500">{segment.details}</p>
-            )}
-          </div>
-          <span className="shrink-0 rounded-full bg-ink px-2 py-0.5 text-[11px] text-zinc-400">
-            {segment.active} en ligne
-          </span>
-        </div>
-
-        {stats ? (
-          <div className="mt-3 flex items-end gap-3">
-            <div>
-              <div className="text-[10px] uppercase tracking-wide text-zinc-600">Prix médian</div>
-              <div className="text-2xl font-semibold tracking-tight text-white">
-                {formatPrice(stats.median)}
-              </div>
-            </div>
-            {stats.trend !== null && Math.abs(stats.trend) >= 0.005 && (
-              <div
-                className={`pb-1 text-[12px] font-medium ${
-                  stats.trend < 0 ? 'text-down' : 'text-up'
-                }`}
-              >
-                {stats.trend < 0 ? '↓' : '↑'} {Math.abs(stats.trend * 100).toFixed(1)} % sur 30 j
-              </div>
-            )}
-          </div>
-        ) : (
-          <p className="mt-3 text-[12px] text-zinc-500">
-            Pas assez d’annonces en ligne pour un prix de référence.
-          </p>
-        )}
-      </button>
-
-      {stats && (
-        <div className="px-4 pb-1 pt-2">
-          <PriceDistribution
-            prices={segment.prices}
-            median={stats.median}
-            p25={stats.p25}
-            p75={stats.p75}
-          />
-          <p className="mt-1 text-[11px] leading-relaxed text-zinc-600">
-            La moitié des annonces se situe entre {formatPrice(stats.p25)} et{' '}
-            {formatPrice(stats.p75)}.
-          </p>
-        </div>
-      )}
-
-      <div className="px-4 pb-4 pt-3">
-        {segment.deals.length > 0 && (
-          <Group title={`Sous le marché · ${segment.deals.length}`}>
-            {segment.deals.map((listing) => (
-              <Row key={listing.lbcId} listing={listing} kind="deal" />
-            ))}
-          </Group>
-        )}
-
-        {open && (
-          <>
-            {segment.motivated.length > 0 && (
-              <Group title={`Vendeurs qui baissent · ${segment.motivated.length}`}>
-                {segment.motivated.map((listing) => (
-                  <Row key={listing.lbcId} listing={listing} kind="motivated" />
-                ))}
-              </Group>
-            )}
-
-            {segment.lifespan && (
-              <p className="mt-3 rounded-xl bg-ink px-3 py-2.5 text-[12px] leading-relaxed text-zinc-400">
-                Une annonce de ce segment reste en ligne{' '}
-                <strong className="text-zinc-200">{segment.lifespan.median} jours</strong> en
-                médiane, avant de disparaître.{' '}
-                <span className="text-zinc-600">
-                  Sur {segment.lifespan.sample} annonces déjà parties.
-                </span>
-              </p>
-            )}
-          </>
-        )}
-
-        {(segment.motivated.length > 0 || segment.lifespan) && (
-          <button
-            onClick={onToggle}
-            className="mt-3 w-full rounded-xl border border-ink-line py-2 text-[12px] font-medium text-zinc-400"
-          >
-            {open ? 'Replier' : 'Tout voir'}
-          </button>
-        )}
-      </div>
-    </section>
+    <label className="block">
+      <span className="mb-1 block text-[11px] text-zinc-500">{label}</span>
+      {children}
+    </label>
   );
 }
 
-function daysOnline(since: string): number {
-  return Math.max(Math.round((Date.now() - new Date(since).getTime()) / 86_400_000), 0);
-}
-
-function Group({ title, children }: { title: string; children: React.ReactNode }) {
+function StatusBadge({ item }: { item: Estimation }) {
+  if (item.status === 'queued') {
+    return <span className="shrink-0 text-[11px] text-zinc-400">En attente…</span>;
+  }
+  if (item.status === 'running') {
+    return (
+      <span className="shrink-0 text-[11px] text-accent">
+        Collecte · p.{item.pages} · {item.ads}
+      </span>
+    );
+  }
+  if (item.status === 'error' && !item.collectedAt) {
+    return <span className="shrink-0 text-[11px] text-up">Échec</span>;
+  }
   return (
-    <div className="mt-3">
-      <h3 className="mb-1.5 text-[11px] uppercase tracking-wide text-zinc-600">{title}</h3>
-      <div className="space-y-1.5">{children}</div>
-    </div>
-  );
-}
-
-function Row({ listing, kind }: { listing: MarketListing; kind: 'deal' | 'motivated' }) {
-  return (
-    <Link
-      href={`/annonce/${listing.lbcId}`}
-      className="flex items-center gap-3 rounded-xl bg-ink px-3 py-2.5 active:scale-[0.99]"
-    >
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-[13px] text-zinc-200">{listing.title}</div>
-        <div className="mt-0.5 truncate text-[11px] text-zinc-600">
-          {listing.location ?? 'Lieu inconnu'} · {daysOnline(listing.firstSeenAt)} j en ligne
-        </div>
-      </div>
-
-      <div className="shrink-0 text-right">
-        <div className="text-[14px] font-semibold text-white">{formatPrice(listing.price)}</div>
-        {kind === 'deal' ? (
-          // Un écart au marché n'est pas une baisse de prix : la flèche est
-          // réservée aux évolutions dans le temps, sous peine de les confondre.
-          <div className="text-[11px] font-medium text-down">
-            {Math.round(Math.abs(listing.gapRatio) * 100)} % sous le marché
-          </div>
-        ) : (
-          <div className="text-[11px] font-medium text-down">
-            ↓ {formatPrice(listing.totalDrop)} en {listing.drops} baisses
-          </div>
-        )}
-      </div>
-    </Link>
+    <span className="shrink-0 text-right text-[11px] text-zinc-400">
+      {item.ads} annonces
+      <br />
+      <span className="text-zinc-600">{relativeTime(item.collectedAt)}</span>
+    </span>
   );
 }

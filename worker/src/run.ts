@@ -19,6 +19,7 @@ import {
 } from './browser.js';
 import { loginToLeboncoin } from './login.js';
 import { collectListings, collectSavedSearches } from './scrape.js';
+import { exclusive } from './queue.js';
 
 export function log(message: string, extra?: unknown): void {
   const line = `[${new Date().toISOString()}] ${message}`;
@@ -51,7 +52,11 @@ export function isRunning(): boolean {
  * parallèle : trois navigations simultanées depuis une même connexion se
  * remarquent.
  */
-export async function runOnce(): Promise<void> {
+export function runOnce(): Promise<void> {
+  return exclusive(collectAll);
+}
+
+async function collectAll(): Promise<void> {
   if (running) {
     log('Relevé déjà en cours, passage ignoré');
     return;

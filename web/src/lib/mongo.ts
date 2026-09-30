@@ -1,6 +1,6 @@
 import { MongoClient, type Collection, type Db } from 'mongodb';
 import { env } from './env';
-import type { Listing, PricePoint, Run, SavedSearch, User } from './types';
+import type { Listing, MarketAd, MarketQuery, PricePoint, Run, SavedSearch, User } from './types';
 
 /**
  * Un seul client pour tout le process, avec un pool volontairement étroit :
@@ -64,6 +64,10 @@ async function ensureIndexes(db: Db): Promise<void> {
     ['price_points', 'price_points', { uid: 1, lbcId: 1, observedAt: 1 }, {}],
     ['searches', 'searches', { uid: 1, lbcSearchId: 1 }, { unique: true }],
     ['runs', 'runs', { uid: 1, startedAt: -1 }, {}],
+    ['market_ads', 'market_ads', { lbcId: 1 }, { unique: true }],
+    ['market_queries', 'market_queries', { id: 1 }, { unique: true }],
+    ['market_queries', 'market_queries', { uid: 1, createdAt: -1 }, {}],
+    ['market_queries', 'market_queries', { key: 1, collectedAt: -1 }, {}],
   ];
 
   for (const [, collection, keys, options] of wanted) {
@@ -99,5 +103,7 @@ export async function collections() {
     pricePoints: db.collection<PricePoint>('price_points') as Collection<PricePoint>,
     searches: db.collection<SavedSearch>('searches') as Collection<SavedSearch>,
     runs: db.collection<Run>('runs') as Collection<Run>,
+    marketAds: db.collection<MarketAd>('market_ads') as Collection<MarketAd>,
+    marketQueries: db.collection<MarketQuery>('market_queries') as Collection<MarketQuery>,
   };
 }

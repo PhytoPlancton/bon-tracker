@@ -34,3 +34,10 @@ export function relativeTime(value: string | Date | null): string {
   const days = Math.round(hours / 24);
   return `il y a ${days} j`;
 }
+
+export function yearsLabel(item: { yearMin: number | null; yearMax: number | null }) {
+  if (item.yearMin && item.yearMax) return `${item.yearMin} – ${item.yearMax}`;
+  if (item.yearMin) return `depuis ${item.yearMin}`;
+  if (item.yearMax) return `jusqu’à ${item.yearMax}`;
+  return 'toutes années';
+}

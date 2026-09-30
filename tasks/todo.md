@@ -81,5 +81,21 @@ session) couvre le cas où l'automatisation échoue.
 - [x] Répartition des prix du segment, chaque annonce à sa place
 - [ ] Statistiques d'activité (messages envoyés) — décidé en second
 
+## Cote d'un modèle (2026-09-30)
+Remplace la lecture par segment : on choisit une voiture, on voit ce qu'elle vaut.
+- [x] Demande marque / modèle / années ; le collecteur bâtit la recherche
+      leboncoin (codes internes du modèle déduits de la 1re page), tourne
+      jusqu'à 20 pages avec des pauses de 3 à 6 s
+- [x] Collectes mutualisées : un même modèle relevé il y a moins de 24 h est
+      réutilisé, quel que soit le compte qui l'a demandé
+- [x] Graphique prix / km, couleur par motorisation ou par année, une courbe
+      médiane par moteur, filtre par motorisation avec effectifs
+- [x] « Ta voiture » : valeur d'après les comparables (même moteur, années et
+      km proches, élargis seulement faute de mieux, silence sous 4 voitures)
+- [x] Annonces à 15 % ou plus sous leurs propres comparables
+- [x] 42 vérifications (tests/estimation.mjs), dont réutilisation et cloisonnement
+- [ ] Éprouver sur leboncoin réel : présence de `u_car_version` dans les pages
+      de recherche (sinon motorisation « Non précisée » partout)
+
 ## Hors scope V1
 Alertes e-mail/Telegram, multi-utilisateur, application native.

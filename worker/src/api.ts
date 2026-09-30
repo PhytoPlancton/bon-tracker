@@ -114,3 +114,27 @@ export function reportRun(payload: {
     body: JSON.stringify(payload),
   });
 }
+
+export interface MarketQueryPatch {
+  status?: 'running' | 'done' | 'error';
+  pages?: number;
+  ads?: number;
+  codes?: { brand: string; model: string } | null;
+  error?: string;
+}
+
+/** Avancement d'une collecte de marché, affiché en direct dans l'application. */
+export function updateMarketQuery(queryId: string, patch: MarketQueryPatch) {
+  return call<{ ok: boolean }>(`/api/internal/market/queries/${encodeURIComponent(queryId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  });
+}
+
+/** Les annonces d'un modèle, versées dans la base commune à tous les comptes. */
+export function ingestMarketAds(queryId: string, ads: ScrapedListing[]) {
+  return call<{ ok: boolean }>('/api/internal/market/ads', {
+    method: 'POST',
+    body: JSON.stringify({ queryId, ads }),
+  });
+}

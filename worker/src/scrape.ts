@@ -41,7 +41,14 @@ export async function collectListings(page: Page, url: string): Promise<ScrapedL
     await autoScroll(page);
     await page.waitForTimeout(1500);
 
-    // Les deux lectures se complètent : les réponses du site portent parfois
+    // Les pages de résultats embarquent la description complète de chaque
+    // annonce dans leur propre code — version, puissance, kilométrage —, là où
+    // les cartes visibles n'en montrent qu'une partie.
+    for (const listing of await readEmbedded(page)) {
+      found.set(listing.lbcId, merge(found.get(listing.lbcId), listing));
+    }
+
+    // Les lectures se complètent : les réponses du site portent parfois
     // un prix exact sans caractéristiques, les cartes l'inverse. Ne recourir à
     // la seconde qu'en dernier ressort privait les annonces de leur année et
     // de leur kilométrage sur toutes les pages de résultats.
@@ -78,6 +85,108 @@ function merge(a: ScrapedListing | undefined, b: ScrapedListing): ScrapedListing
 /** Le titre le plus complet : l'un des deux est parfois tronqué. */
 function longest(a: string, b: string): string {
   return (a?.length ?? 0) >= (b?.length ?? 0) ? a : b;
+}
+
+/**
+ * Lit la description des annonces embarquée dans la page.
+ *
+ * Deux formes coexistent selon les pages : un bloc JSON unique
+ * (« __NEXT_DATA__ »), ou des fragments diffusés au fil du rendu où les objets
+ * d'annonce figurent tels quels, parfois échappés. On essaie la première, puis
+ * on extrait de la seconde chaque objet qui porte un identifiant d'annonce.
+ */
+async function readEmbedded(page: Page): Promise<ScrapedListing[]> {
+  const chunks = await page
+    .evaluate(() => {
+      const out: string[] = [];
+      const next = document.getElementById('__NEXT_DATA__');
+      if (next?.textContent) out.push(next.textContent);
+
+      const flight = (window as unknown as { __next_f?: unknown[] }).__next_f;
+      if (Array.isArray(flight)) {
+        out.push(
+          flight
+            .map((chunk) => (Array.isArray(chunk) && typeof chunk[1] === 'string' ? chunk[1] : ''))
+            .join(''),
+        );
+      }
+      return out;
+    })
+    .catch(() => [] as string[]);
+
+  const found: ScrapedListing[] = [];
+  for (const chunk of chunks) {
+    try {
+      harvest(JSON.parse(chunk), found);
+      continue;
+    } catch {
+      // Pas un JSON d'un seul tenant : on cherche les objets à l'intérieur.
+    }
+    for (const variant of [chunk, chunk.replace(/\\"/g, '"')]) {
+      for (const fragment of objectsContaining(variant, '"list_id"')) {
+        try {
+          harvest(JSON.parse(fragment), found);
+        } catch {
+          // Fragment tronqué ou mal délimité : on passe.
+        }
+      }
+    }
+  }
+  return found;
+}
+
+/**
+ * Extrait d'un texte chaque objet JSON contenant le marqueur donné : remonte à
+ * l'accolade qui l'englobe, puis la referme en tenant compte des chaînes.
+ */
+function objectsContaining(text: string, marker: string): string[] {
+  const fragments: string[] = [];
+  const starts = new Set<number>();
+  let index = text.indexOf(marker);
+
+  while (index !== -1 && fragments.length < 2000) {
+    let depth = 0;
+    let start = -1;
+    for (let i = index; i >= 0; i -= 1) {
+      const char = text[i];
+      if (char === '}') depth += 1;
+      else if (char === '{') {
+        if (depth === 0) {
+          start = i;
+          break;
+        }
+        depth -= 1;
+      }
+    }
+
+    if (start !== -1 && !starts.has(start)) {
+      starts.add(start);
+      const end = closingBrace(text, start);
+      if (end !== -1) fragments.push(text.slice(start, end + 1));
+    }
+    index = text.indexOf(marker, index + marker.length);
+  }
+  return fragments;
+}
+
+function closingBrace(text: string, start: number): number {
+  let depth = 0;
+  let inString = false;
+  for (let i = start; i < text.length; i += 1) {
+    const char = text[i];
+    if (inString) {
+      if (char === '\\') i += 1;
+      else if (char === '"') inString = false;
+      continue;
+    }
+    if (char === '"') inString = true;
+    else if (char === '{') depth += 1;
+    else if (char === '}') {
+      depth -= 1;
+      if (depth === 0) return i;
+    }
+  }
+  return -1;
 }
 
 /** Parcourt un JSON quelconque et en retire tout ce qui ressemble à une annonce. */
@@ -165,6 +274,13 @@ function extractAttributes(record: Record<string, unknown>): Record<string, stri
     const value = item.value ?? item.value_label;
     if (!key || (typeof value !== 'string' && typeof value !== 'number')) continue;
     attributes[key.slice(0, 40)] = String(value).slice(0, 80);
+
+    // Certaines valeurs sont des codes (« fuel=1 ») : leur libellé est gardé
+    // à part, c'est lui qu'on affiche.
+    const label = item.value_label;
+    if (typeof label === 'string' && label !== String(value)) {
+      attributes[`${key.slice(0, 34)}_label`] = label.slice(0, 80);
+    }
   }
 
   return Object.keys(attributes).length ? attributes : undefined;

@@ -120,6 +120,12 @@ Format : [date] | ce qui a mal tourné | règle pour l'éviter
   une comparaison ne peuvent pas partager la même symbolique, même quand les
   deux sont favorables.
 
+- [2026-09-30] | Une médiane prix / km calculée sur toutes motorisations zigzaguait d'un moteur à l'autre et ne décrivait aucune voiture. |
+  Ne jamais agréger des prix de moteurs différents : une courbe par motorisation, ou aucune.
+
+- [2026-09-30] | Une remontée d'avancement « en cours » répétée aurait vidé les annonces déjà reçues de la collecte. |
+  Une remise à zéro ne se fait qu'à la transition d'état, jamais sur une simple mise à jour.
+
 ## Règles permanentes du projet
 - Un seul client MongoDB, `maxPoolSize` bas : le quota de 500 connexions est
   partagé entre plusieurs applications.

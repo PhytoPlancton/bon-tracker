@@ -93,3 +93,53 @@ export interface ScrapedListing {
   price: number | null;
   attributes?: Record<string, string>;
 }
+
+/**
+ * Annonce du marché, commune à tous les comptes : les résultats d'une
+ * recherche sont publics, deux personnes qui estiment le même modèle lisent
+ * la même collecte au lieu d'en déclencher deux.
+ */
+export interface MarketAd {
+  lbcId: string;
+  title: string;
+  url: string;
+  imageUrl: string | null;
+  location: string | null;
+  sellerType: 'pro' | 'private' | null;
+  price: number;
+  km: number | null;
+  year: number | null;
+  /** Motorisation telle que le site la déclare (« Boxster 3.2 S »). */
+  version: string | null;
+  fuel: string | null;
+  gearbox: string | null;
+  brandCode: string | null;
+  modelCode: string | null;
+  firstSeenAt: Date;
+  lastSeenAt: Date;
+}
+
+export type MarketQueryStatus = 'queued' | 'running' | 'done' | 'error';
+
+/** Une estimation demandée par un compte : un modèle, une tranche d'années. */
+export interface MarketQuery {
+  id: string;
+  uid: string;
+  brand: string;
+  model: string;
+  yearMin: number | null;
+  yearMax: number | null;
+  /** Clé de mutualisation : même modèle et mêmes années, même collecte. */
+  key: string;
+  status: MarketQueryStatus;
+  pages: number;
+  ads: number;
+  error: string | null;
+  codes: { brand: string; model: string } | null;
+  /** Annonces retenues par la dernière collecte réussie. */
+  adIds: string[];
+  /** Celles de la collecte en cours, basculées dans adIds une fois finie. */
+  pendingIds: string[];
+  createdAt: Date;
+  collectedAt: Date | null;
+}

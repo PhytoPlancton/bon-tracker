@@ -4,6 +4,8 @@ import { config } from './config.js';
 import { isRunning, log, runOnce } from './run.js';
 import { connectToChrome } from './browser.js';
 import { loginToLeboncoin } from './login.js';
+import { runMarketJob } from './market.js';
+import { exclusive } from './queue.js';
 
 /**
  * Petit serveur de commandes, joignable uniquement depuis le réseau Docker.
@@ -26,13 +28,41 @@ export function startCommandServer(): void {
       return reply(403, { error: 'Interdit' });
     }
 
+    if (request.method === 'POST' && request.url === '/market') {
+      return readJson(request)
+        .then((body) => {
+          const queryId = String(body.queryId ?? '');
+          const brand = String(body.brand ?? '').trim();
+          const model = String(body.model ?? '').trim();
+          if (!queryId || !model) return reply(400, { error: 'Modèle manquant' });
+
+          const year = (value: unknown) =>
+            typeof value === 'number' && value > 1900 && value < 2100 ? value : null;
+          const codes =
+            body.codes && typeof body.codes === 'object'
+              ? (body.codes as { brand: string; model: string })
+              : null;
+
+          // Réponse immédiate : parcourir toutes les pages prend une à deux
+          // minutes, l'application suit l'avancement de son côté.
+          reply(202, { queued: true });
+          void exclusive(() =>
+            runMarketJob(
+              { queryId, brand, model, yearMin: year(body.yearMin), yearMax: year(body.yearMax), codes },
+              log,
+            ),
+          ).catch((cause) => log(`[marché] échec inattendu : ${String(cause)}`));
+        })
+        .catch(() => reply(400, { error: 'Requête illisible' }));
+    }
+
     if (request.method === 'POST' && request.url === '/verify-login') {
       return readJson(request)
         .then(async (body) => {
           const email = String(body.email ?? '');
           const password = String(body.password ?? '');
           if (!email || !password) return reply(400, { error: 'Identifiants manquants' });
-          reply(200, await verifyLogin(email, password));
+          reply(200, await exclusive(() => verifyLogin(email, password)));
         })
         .catch(() => reply(400, { error: 'Requête illisible' }));
     }
