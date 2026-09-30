@@ -43,6 +43,7 @@ async function releaseAbandoned(startedAt: Date): Promise<void> {
       await new Promise((resolve) => setTimeout(resolve, 5000));
     }
   }
+  log('Application injoignable : les collectes de marché interrompues restent affichées en cours');
 }
 
 void main().catch((cause) => {
