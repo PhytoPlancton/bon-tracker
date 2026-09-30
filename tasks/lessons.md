@@ -129,6 +129,9 @@ Format : [date] | ce qui a mal tourné | règle pour l'éviter
 - [2026-09-30] | L'écran de connexion demande le mot de passe leboncoin, mais le compte du propriétaire, né de l'installation, n'acceptait que le mot de passe choisi au setup : connexion impossible avec les bons identifiants leboncoin. |
   Ce qu'un écran demande doit être ce que le serveur vérifie, pour tous les comptes, quelle que soit leur origine.
 
+- [2026-09-30] | La connexion au Chrome dédié était faite hors du bloc qui signale les échecs : Chrome fermé après un redémarrage, l'estimation restait « en cours, page 0 » pour toujours. |
+  Toute étape d'une tâche de fond, connexion comprise, est dans le bloc qui rapporte l'échec ; et toute tâche de fond a un délai au-delà duquel elle est déclarée morte.
+
 ## Règles permanentes du projet
 - Un seul client MongoDB, `maxPoolSize` bas : le quota de 500 connexions est
   partagé entre plusieurs applications.

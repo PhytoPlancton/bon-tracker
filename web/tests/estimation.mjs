@@ -219,9 +219,34 @@ try {
   const porsche = catalogue.brands.find((b) => b.brand.toLowerCase() === 'porsche');
   check('marque et modèle proposés', porsche && porsche.models.includes('Boxster'), catalogue.brands);
 
+  console.log('\nCollecte morte');
+  // Collecteur redémarré ou Chrome fermé en pleine collecte : plus aucune
+  // nouvelle. L'estimation ne doit pas rester « en cours » pour toujours.
+  const dead = await call('POST', '/api/estimations', alice, { brand: 'Porsche', model: 'Cayman', yearMin: 2005, yearMax: 2012 });
+  await call('PATCH', `/api/internal/market/queries/${dead.id}`, worker, { status: 'running', pages: 0, ads: 0 });
+  const direct = new MongoClient(uri);
+  await direct.connect();
+  try {
+    await direct.db(DB).collection('market_queries').updateOne(
+      { id: dead.id },
+      { $set: { updatedAt: new Date(Date.now() - 30 * 60 * 1000) } },
+    );
+  } finally {
+    await direct.close();
+  }
+  const settled = await call('GET', `/api/estimations/${dead.id}`, alice);
+  check('collecte sans nouvelles passée en échec', settled.estimation.status === 'error' && /Chrome/.test(settled.estimation.error), settled.estimation);
+  const before = jobs.length;
+  const relaunched = await raw('POST', `/api/estimations/${dead.id}`, alice, {});
+  check('et relançable', relaunched.status === 200 && jobs.length === before + 1, jobs.length - before);
+  const fresh = await call('GET', `/api/estimations/${dead.id}`, alice);
+  check('une collecte relancée n’est pas aussitôt déclarée morte', fresh.estimation.status === 'queued', fresh.estimation.status);
+  await call('DELETE', `/api/estimations/${dead.id}`, alice);
+
   console.log('\nRelance et suppression');
+  const jobsBefore = jobs.length;
   const refreshed = await raw('POST', `/api/estimations/${created.id}`, alice, {});
-  check('relance acceptée', refreshed.status === 200 && jobs.length === 3, jobs.length);
+  check('relance acceptée', refreshed.status === 200 && jobs.length === jobsBefore + 1, jobs.length - jobsBefore);
   await call('PATCH', `/api/internal/market/queries/${created.id}`, worker, { status: 'error', error: 'Accès restreint' });
   const failedRun = await call('GET', `/api/estimations/${created.id}`, alice);
   check('un échec garde la collecte précédente', failedRun.estimation.status === 'error' && failedRun.ads.length === ads.length, failedRun.ads.length);

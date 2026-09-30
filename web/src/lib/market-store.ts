@@ -10,6 +10,34 @@ const FRESH_FOR = 24 * 60 * 60 * 1000;
 /** Collectes simultanées par compte : chacune occupe le navigateur une à deux minutes. */
 const MAX_ACTIVE = 3;
 
+/**
+ * Sans nouvelles du collecteur depuis ce délai, une collecte ne progresse
+ * plus : collecteur redémarré, Chrome fermé. Une collecte dure quelques
+ * minutes, mais peut attendre derrière un relevé complet de tous les comptes.
+ */
+const STALE_AFTER = 20 * 60 * 1000;
+
+/** Rend la main sur les collectes mortes, pour qu'on puisse les relancer. */
+async function settleStale(): Promise<void> {
+  const { marketQueries } = await collections();
+  const cutoff = new Date(Date.now() - STALE_AFTER);
+  await marketQueries.updateMany(
+    {
+      status: { $in: ['queued', 'running'] },
+      $or: [
+        { updatedAt: { $lt: cutoff } },
+        { updatedAt: { $exists: false }, createdAt: { $lt: cutoff } },
+      ],
+    },
+    {
+      $set: {
+        status: 'error',
+        error: 'Collecte interrompue sans nouvelles du collecteur. Vérifie que la fenêtre Chrome dédiée est ouverte, puis Actualise.',
+      },
+    },
+  );
+}
+
 export function queryKey(brand: string, model: string, yearMin: number | null, yearMax: number | null) {
   return [normalize(brand), normalize(model), yearMin ?? '', yearMax ?? ''].join('|');
 }
@@ -38,6 +66,7 @@ export async function createQuery(
   uid: string,
   input: { brand: string; model: string; yearMin: number | null; yearMax: number | null },
 ): Promise<CreateOutcome> {
+  await settleStale();
   const { marketQueries } = await collections();
   const key = queryKey(input.brand, input.model, input.yearMin, input.yearMax);
 
@@ -53,7 +82,7 @@ export async function createQuery(
 
   if (fresh) {
     const query = mine
-      ? { ...mine, adIds: fresh.adIds, codes: fresh.codes, ads: fresh.ads, status: 'done' as const, collectedAt: fresh.collectedAt, error: null }
+      ? { ...mine, adIds: fresh.adIds, codes: fresh.codes, ads: fresh.ads, status: 'done' as const, collectedAt: fresh.collectedAt, error: null, updatedAt: new Date() }
       : buildQuery(uid, input, key, { status: 'done', adIds: fresh.adIds, codes: fresh.codes, ads: fresh.ads, collectedAt: fresh.collectedAt });
     await marketQueries.updateOne({ id: query.id }, { $set: query }, { upsert: true });
     return { kind: 'reused', query };
@@ -69,7 +98,7 @@ export async function createQuery(
   );
 
   const query = mine
-    ? { ...mine, status: 'queued' as const, error: null, codes: mine.codes ?? known?.codes ?? null }
+    ? { ...mine, status: 'queued' as const, error: null, codes: mine.codes ?? known?.codes ?? null, updatedAt: new Date() }
     : buildQuery(uid, input, key, { codes: known?.codes ?? null });
 
   await marketQueries.updateOne({ id: query.id }, { $set: query }, { upsert: true });
@@ -99,6 +128,7 @@ function buildQuery(
     adIds: [],
     pendingIds: [],
     createdAt: new Date(),
+    updatedAt: new Date(),
     collectedAt: null,
     ...overrides,
   };
@@ -140,13 +170,14 @@ export async function dispatch(query: MarketQuery): Promise<void> {
 }
 
 export async function refreshQuery(uid: string, id: string): Promise<MarketQuery | null> {
+  await settleStale();
   const { marketQueries } = await collections();
   const query = await marketQueries.findOne({ uid, id }, { projection: { _id: 0 } });
   if (!query) return null;
   if (query.status === 'queued' || query.status === 'running') return query;
 
   const next = { ...query, status: 'queued' as const, error: null };
-  await marketQueries.updateOne({ id }, { $set: { status: 'queued', error: null } });
+  await marketQueries.updateOne({ id }, { $set: { status: 'queued', error: null, updatedAt: new Date() } });
   await dispatch(next);
   return next;
 }
@@ -218,6 +249,7 @@ export async function updateQueryProgress(
           ads: { $size: '$pendingIds' },
           pendingIds: [],
           collectedAt: '$$NOW',
+          updatedAt: '$$NOW',
           error: null,
           ...(patch.pages !== undefined ? { pages: patch.pages } : {}),
         },
@@ -226,7 +258,7 @@ export async function updateQueryProgress(
     return result.matchedCount > 0;
   }
 
-  const set: Record<string, unknown> = {};
+  const set: Record<string, unknown> = { updatedAt: new Date() };
   if (patch.status) set.status = patch.status;
   if (patch.pages !== undefined) set.pages = patch.pages;
   if (patch.ads !== undefined) set.ads = patch.ads;
@@ -249,6 +281,7 @@ export async function updateQueryProgress(
 // ---------------------------------------------------------------------------
 
 export async function listQueries(uid: string) {
+  await settleStale();
   const { marketQueries } = await collections();
   return marketQueries
     .find({ uid }, { projection: { _id: 0, adIds: 0, pendingIds: 0 } })
@@ -258,6 +291,7 @@ export async function listQueries(uid: string) {
 }
 
 export async function getQuery(uid: string, id: string) {
+  await settleStale();
   const { marketQueries } = await collections();
   return marketQueries.findOne({ uid, id }, { projection: { _id: 0, pendingIds: 0 } });
 }

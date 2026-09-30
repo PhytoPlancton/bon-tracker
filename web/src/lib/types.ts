@@ -141,5 +141,7 @@ export interface MarketQuery {
   /** Celles de la collecte en cours, basculées dans adIds une fois finie. */
   pendingIds: string[];
   createdAt: Date;
+  /** Dernière nouvelle du collecteur : sans elle depuis trop longtemps, la collecte est morte. */
+  updatedAt?: Date;
   collectedAt: Date | null;
 }

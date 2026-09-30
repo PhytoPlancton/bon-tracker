@@ -1,4 +1,4 @@
-import type { Page } from 'playwright';
+import type { Browser, Page } from 'playwright';
 import { LBC_ORIGIN } from './config.js';
 import { ingestMarketAds, updateMarketQuery, type ScrapedListing } from './api.js';
 import { connectToChrome, mainContext } from './browser.js';
@@ -19,6 +19,13 @@ export interface MarketSpec {
 const MAX_PAGES = 20;
 
 /**
+ * Vingt pages à six secondes près tiennent en quatre minutes. Au double, la
+ * collecte est bloquée — page qui ne répond plus, vérification anti-robot —
+ * et doit le dire plutôt que laisser l'application attendre sans fin.
+ */
+const JOB_TIMEOUT_MS = 8 * 60 * 1000;
+
+/**
  * Relève toutes les annonces d'un modèle.
  *
  * Première page en recherche libre (« boxster »), qui ramène des annonces
@@ -32,10 +39,25 @@ export async function runMarketJob(spec: MarketSpec, log: (message: string) => v
   const label = `${spec.brand} ${spec.model}`.trim();
   await updateMarketQuery(spec.queryId, { status: 'running', pages: 0, ads: 0 });
 
-  const browser = await connectToChrome();
-  const page = await mainContext(browser).newPage();
+  log(`[marché] ${label} : ouverture de la recherche`);
 
+  // Fermer l'onglet interrompt toute action en cours dessus : c'est le seul
+  // moyen sûr de débloquer une navigation qui ne rend jamais la main.
+  let browser: Browser | null = null;
+  let page: Page | null = null;
+  let timedOut = false;
+  const deadline = setTimeout(() => {
+    timedOut = true;
+    void page?.close().catch(() => undefined);
+  }, JOB_TIMEOUT_MS);
+
+  // La connexion au navigateur est dans le bloc surveillé : un Chrome fermé
+  // doit se lire comme un échec dans l'application, pas comme une collecte
+  // qui n'avance plus.
   try {
+    browser = await connectToChrome();
+    page = await mainContext(browser).newPage();
+
     let codes = spec.codes;
     let first = await collectListings(page, searchUrl(spec, codes, 1));
 
@@ -73,14 +95,19 @@ export async function runMarketJob(spec: MarketSpec, log: (message: string) => v
     await updateMarketQuery(spec.queryId, { status: 'done', ads: kept.length });
     log(`[marché] ${label} : ${kept.length} annonces retenues sur ${all.size} vues`);
   } catch (cause) {
-    const message = cause instanceof Error ? cause.message : String(cause);
+    const message = timedOut
+      ? `Collecte interrompue après ${JOB_TIMEOUT_MS / 60_000} minutes sans aboutir. Vérifie la fenêtre Chrome dédiée (vérification anti-robot ?) puis relance.`
+      : cause instanceof Error
+        ? cause.message
+        : String(cause);
     log(`[marché] ${label} : échec — ${message}`);
     await updateMarketQuery(spec.queryId, { status: 'error', error: message.slice(0, 500) }).catch(
       () => undefined,
     );
   } finally {
-    await page.close().catch(() => undefined);
-    await browser.close().catch(() => undefined);
+    clearTimeout(deadline);
+    await page?.close().catch(() => undefined);
+    await browser?.close().catch(() => undefined);
   }
 }
 
@@ -164,4 +191,3 @@ function pause(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 3000 + Math.random() * 3000));
 }
 
-export type { Page };

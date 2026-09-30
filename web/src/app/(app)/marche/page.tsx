@@ -201,7 +201,7 @@ function StatusBadge({ item }: { item: Estimation }) {
   if (item.status === 'running') {
     return (
       <span className="shrink-0 text-[11px] text-accent">
-        Collecte · p.{item.pages} · {item.ads}
+        {item.pages === 0 ? 'Ouverture…' : `Collecte · p.${item.pages} · ${item.ads}`}
       </span>
     );
   }

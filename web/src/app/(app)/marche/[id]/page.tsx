@@ -135,6 +135,8 @@ export default function EstimationPage({ params }: { params: Promise<{ id: strin
         <div className="mb-3 rounded-2xl border border-accent/40 bg-accent/10 px-4 py-3 text-[13px] text-accent-soft">
           {status === 'queued' ? (
             'En file d’attente — le collecteur termine une autre tâche.'
+          ) : estimation.pages === 0 ? (
+            'Ouverture de la recherche sur leboncoin…'
           ) : (
             <>
               Collecte en cours : page {estimation.pages}, {estimation.ads} annonces lues.
