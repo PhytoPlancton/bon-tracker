@@ -1,6 +1,6 @@
 import type { Browser, Page } from 'playwright';
 import { LBC_ORIGIN } from './config.js';
-import { ingestMarketAds, updateMarketQuery, type ScrapedListing } from './api.js';
+import { ingestMarketAds, updateMarketQuery, type MarketActivity, type ScrapedListing } from './api.js';
 import { connectToChrome, mainContext } from './browser.js';
 import { collectListings } from './scrape.js';
 
@@ -40,6 +40,12 @@ export async function runMarketJob(spec: MarketSpec, log: (message: string) => v
   await updateMarketQuery(spec.queryId, { status: 'running', pages: 0, ads: 0 });
 
   log(`[marché] ${label} : ouverture de la recherche`);
+  const say = (step: string, extra: Partial<MarketActivity> = {}) =>
+    updateMarketQuery(spec.queryId, { activity: { step, recent: [], total: null, ...extra } }).catch(
+      () => undefined,
+    );
+  let total: number | null = null;
+  await say('Connexion au navigateur');
 
   // Fermer l'onglet interrompt toute action en cours dessus : c'est le seul
   // moyen sûr de débloquer une navigation qui ne rend jamais la main.
@@ -59,35 +65,56 @@ export async function runMarketJob(spec: MarketSpec, log: (message: string) => v
     page = await mainContext(browser).newPage();
 
     let codes = spec.codes;
+    await say(codes ? `Recherche des ${label} sur leboncoin` : `Recherche de « ${label} » sur leboncoin`);
     let first = await collectListings(page, searchUrl(spec, codes, 1));
 
     if (!codes) {
       codes = resolveCodes(first, spec.model);
       if (codes) {
         log(`[marché] ${label} : codes du site ${codes.brand} / ${codes.model}`);
+        await say(`Modèle identifié chez leboncoin : on relance une recherche précise`, {
+          recent: preview(first),
+        });
         await pause();
         first = await collectListings(page, searchUrl(spec, codes, 1));
       } else {
         log(`[marché] ${label} : codes introuvables, recherche libre`);
       }
     }
+    total = await readTotal(page, first.length);
 
     const all = new Map<string, ScrapedListing>();
     add(all, first);
-    await updateMarketQuery(spec.queryId, { pages: 1, ads: all.size, codes });
+    await updateMarketQuery(spec.queryId, {
+      pages: 1,
+      ads: all.size,
+      codes,
+      activity: { step: `Page 1 lue · ${first.length} annonces`, recent: preview(first), total },
+    });
 
     for (let number = 2; number <= MAX_PAGES; number += 1) {
       await pause();
       const before = all.size;
-      add(all, await collectListings(page, searchUrl(spec, codes, number)));
+      const found = await collectListings(page, searchUrl(spec, codes, number));
+      const fresh = found.filter((ad) => !all.has(ad.lbcId));
+      add(all, found);
       const gained = all.size - before;
       log(`[marché] ${label} : page ${number}, ${gained} nouvelles (${all.size} au total)`);
-      await updateMarketQuery(spec.queryId, { pages: number, ads: all.size });
+      await updateMarketQuery(spec.queryId, {
+        pages: number,
+        ads: all.size,
+        activity: {
+          step: gained ? `Page ${number} lue · ${gained} nouvelles annonces` : `Page ${number} : plus rien de neuf`,
+          recent: preview(fresh),
+          total,
+        },
+      });
       // Une page sans rien de neuf : on a fait le tour.
       if (gained === 0) break;
     }
 
     const kept = [...all.values()].filter((ad) => belongs(ad, spec, codes));
+    await say(`Tri de ${all.size} annonces : ${kept.length} sont bien des ${label}`, { total });
     for (let i = 0; i < kept.length; i += 200) {
       await ingestMarketAds(spec.queryId, kept.slice(i, i + 200));
     }
@@ -171,6 +198,46 @@ function belongs(
     .split(' ')
     .filter(Boolean)
     .every((word) => title.includes(word));
+}
+
+/**
+ * Ce que l'application montre pendant la collecte : les dernières annonces
+ * lues, pour qu'on voie le travail avancer plutôt qu'un compteur.
+ */
+function preview(ads: ScrapedListing[]): MarketActivity['recent'] {
+  return ads
+    .filter((ad) => ad.price !== null)
+    .slice(0, 8)
+    .map((ad) => ({
+      title: ad.title.slice(0, 120),
+      price: ad.price as number,
+      km: wholeNumber(ad.attributes?.mileage ?? ad.attributes?.kilometrage),
+      year: wholeNumber(ad.attributes?.regdate ?? ad.attributes?.annee),
+      imageUrl: ad.imageUrl ?? null,
+      location: ad.location ?? null,
+    }));
+}
+
+function wholeNumber(value?: string): number | null {
+  const digits = value?.replace(/[^\d]/g, '');
+  return digits ? Number(digits) : null;
+}
+
+/**
+ * Nombre d'annonces annoncé par la page de résultats, pour situer
+ * l'avancement. Lecture approximative : écartée si elle contredit ce qu'on
+ * voit déjà sur la première page.
+ */
+async function readTotal(page: Page, firstPage: number): Promise<number | null> {
+  const text = await page
+    .evaluate(() => {
+      const heading = document.querySelector('h1, h2');
+      return `${heading?.textContent ?? ''}\n${document.body.innerText.slice(0, 4000)}`;
+    })
+    .catch(() => '');
+  const match = text.match(/(\d[\d\s\u202f\u00a0.]{0,8})\s+annonces?\b/i);
+  const total = match ? Number(match[1].replace(/[^\d]/g, '')) : NaN;
+  return Number.isFinite(total) && total >= firstPage && total < 100_000 ? total : null;
 }
 
 function add(target: Map<string, ScrapedListing>, ads: ScrapedListing[]): void {

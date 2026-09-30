@@ -135,6 +135,12 @@ Format : [date] | ce qui a mal tourné | règle pour l'éviter
 - [2026-09-30] | Les motorisations étaient prises telles que publiées : « S_Cayman 3.4 S », « Cayman 3.4 S TipTronic S »… un même moteur éclaté en treize entrées, et les meilleures « affaires » étaient des volants à droite. |
   Regarder les vraies données avant de concevoir les regroupements ; séparer ce qui change le prix pour une raison propre à l'annonce (boîte, RHD, accident) de ce qui définit le modèle.
 
+- [2026-09-30] | « Zoomer » a été traduit par des boutons de plage et une sélection au glisser ; l'utilisateur attendait un graphique qui se manipule comme une carte (molette, trackpad, pincement, glisser). |
+  Un geste d'interface se conçoit d'après l'appareil de la personne (ici trackpad Mac et iPhone) et les usages qu'elle connaît : reproduire le geste attendu, pas une approximation par boutons.
+
+- [2026-09-30] | Une animation d'apparition avec remplissage « both » laissait les éléments invisibles tant qu'elle ne tournait pas (onglet masqué). |
+  Une animation d'entrée ne doit jamais être la condition de la visibilité : sans remplissage, l'état par défaut reste visible.
+
 ## Règles permanentes du projet
 - Un seul client MongoDB, `maxPoolSize` bas : le quota de 500 connexions est
   partagé entre plusieurs applications.

@@ -167,6 +167,20 @@ try {
   check('rien d’exposé avant la fin de la collecte', midway.ads.length === 0, midway.ads.length);
   check('avancement remonté', midway.estimation.pages === 1 && midway.estimation.ads === 30, midway.estimation);
 
+  await call('PATCH', `/api/internal/market/queries/${created.id}`, worker, {
+    pages: 2,
+    ads: 53,
+    activity: {
+      step: 'Page 2 lue · 23 nouvelles annonces',
+      recent: [{ title: 'Porsche Boxster S 3.2 2002', price: 21_500, km: 98_000, year: 2002, imageUrl: null, location: 'Caen 14000' }],
+      total: 55,
+    },
+  });
+  const live = await call('GET', `/api/estimations/${created.id}`, alice);
+  check('activité en direct exposée', live.estimation.activity?.step?.startsWith('Page 2') && live.estimation.activity?.recent?.[0]?.title === 'Porsche Boxster S 3.2 2002' && live.estimation.activity?.total === 55, live.estimation.activity);
+  const tooLong = await raw('PATCH', `/api/internal/market/queries/${created.id}`, worker, { activity: { step: 'x'.repeat(500), recent: [], total: null } });
+  check('activité démesurée refusée', tooLong.status === 400, tooLong.status);
+
   await call('POST', '/api/internal/market/ads', worker, { queryId: created.id, ads: ads.slice(30) });
   await call('PATCH', `/api/internal/market/queries/${created.id}`, worker, { status: 'done', pages: 2 });
 
@@ -174,6 +188,8 @@ try {
   const done = await call('GET', `/api/estimations/${created.id}`, alice);
   const { analysis } = done;
   check('collecte terminée', done.estimation.status === 'done' && done.estimation.collectedAt, done.estimation);
+  check('activité effacée une fois terminé', !done.estimation.activity, done.estimation.activity);
+  check('médiane par moteur', analysis.versions.every((v) => typeof v.median === 'number' && v.median > 0) && analysis.versions[0].median > analysis.versions[1].median, analysis.versions);
   check('toutes les annonces rattachées', done.ads.length === ads.length && done.estimation.ads === ads.length, done.ads.length);
   check('épave écartée', analysis.excluded === 1 && !done.estimate, analysis.excluded);
   check('deux motorisations, la plus courante d’abord', analysis.versions.length === 2 && analysis.versions[0]?.name === 'Boxster 3.2 S' && analysis.versions[0]?.count === 34 && analysis.versions[1]?.name === 'Boxster 2.5' && analysis.versions[1]?.count === 21, analysis.versions);

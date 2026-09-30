@@ -337,7 +337,7 @@ export interface Analysis {
   yearMin: number | null;
   yearMax: number | null;
   /** Motorisations présentes, les plus courantes d'abord. */
-  versions: { name: string; count: number }[];
+  versions: { name: string; count: number; median: number }[];
   /** Médiane des prix par tranche de kilométrage : la courbe du marché. */
   trend: { km: number; price: number; count: number }[];
   /** Annonces nettement sous le prix de leurs propres comparables. */
@@ -351,10 +351,10 @@ export function analyze(ads: Ad[]): Analysis | null {
   const prices = kept.map((ad) => ad.price).sort((a, b) => a - b);
   const years = kept.map((ad) => ad.year).filter((y): y is number => y !== null);
 
-  const versionCounts = new Map<string, number>();
+  const versionPrices = new Map<string, number[]>();
   for (const ad of kept) {
     const name = ad.version ?? 'Non précisée';
-    versionCounts.set(name, (versionCounts.get(name) ?? 0) + 1);
+    versionPrices.set(name, [...(versionPrices.get(name) ?? []), ad.price]);
   }
 
   return {
@@ -368,8 +368,8 @@ export function analyze(ads: Ad[]): Analysis | null {
     max: prices[prices.length - 1],
     yearMin: years.length ? Math.min(...years) : null,
     yearMax: years.length ? Math.max(...years) : null,
-    versions: [...versionCounts.entries()]
-      .map(([name, count]) => ({ name, count }))
+    versions: [...versionPrices.entries()]
+      .map(([name, list]) => ({ name, count: list.length, median: median(list) }))
       .sort((a, b) => b.count - a.count),
     trend: trendOf(kept),
     deals: dealsOf(kept),
@@ -407,7 +407,9 @@ function dealsOf(ads: Ad[]): Analysis['deals'] {
   const level = LEVELS[1];
 
   for (const ad of ads) {
-    if (ad.km === null || ad.year === null) continue;
+    // Sans moteur connu, l'annonce se comparerait à toutes les motorisations
+    // à la fois : une 2.7 passerait pour une affaire face aux 3.4 S.
+    if (ad.km === null || ad.year === null || !ad.version) continue;
     const peers = ads.filter((other) => other.lbcId !== ad.lbcId && matches(ad, other, level));
     if (peers.length < MIN_COMPARABLES) continue;
 

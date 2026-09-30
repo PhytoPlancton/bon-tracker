@@ -119,6 +119,19 @@ export interface MarketAd {
   lastSeenAt: Date;
 }
 
+export interface MarketActivity {
+  step: string;
+  recent: {
+    title: string;
+    price: number;
+    km: number | null;
+    year: number | null;
+    imageUrl: string | null;
+    location: string | null;
+  }[];
+  total: number | null;
+}
+
 export type MarketQueryStatus = 'queued' | 'running' | 'done' | 'error';
 
 /** Une estimation demandée par un compte : un modèle, une tranche d'années. */
@@ -141,6 +154,8 @@ export interface MarketQuery {
   /** Celles de la collecte en cours, basculées dans adIds une fois finie. */
   pendingIds: string[];
   createdAt: Date;
+  /** Ce que fait le collecteur en ce moment, pour l'écran d'attente. */
+  activity?: MarketActivity | null;
   /** Dernière nouvelle du collecteur : sans elle depuis trop longtemps, la collecte est morte. */
   updatedAt?: Date;
   collectedAt: Date | null;

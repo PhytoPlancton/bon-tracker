@@ -115,7 +115,22 @@ export function reportRun(payload: {
   });
 }
 
+/** Ce que fait le collecteur, montré en direct dans l'application. */
+export interface MarketActivity {
+  step: string;
+  recent: {
+    title: string;
+    price: number;
+    km: number | null;
+    year: number | null;
+    imageUrl: string | null;
+    location: string | null;
+  }[];
+  total: number | null;
+}
+
 export interface MarketQueryPatch {
+  activity?: MarketActivity;
   status?: 'running' | 'done' | 'error';
   pages?: number;
   ads?: number;

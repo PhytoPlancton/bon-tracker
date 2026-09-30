@@ -21,10 +21,14 @@ export interface KmPoint {
 
 type Plotted = KmPoint & { km: number };
 type Trend = { version: string | null; points: { km: number; price: number }[] };
+/** Fenêtre affichée, en euros (horizontal) et en kilomètres (vertical). */
+type Domain = { x0: number; x1: number; y0: number; y1: number };
 
-const PADDING = { top: 14, right: 12, bottom: 28, left: 50 };
-const HEIGHT = 320;
+const PADDING = { top: 16, right: 14, bottom: 30, left: 58 };
+const HEIGHT = 340;
 const CARD_WIDTH = 236;
+/** Plus serré, un zoom ne montrerait plus qu'une ou deux voitures. */
+const MIN_SPAN = { price: 800, km: 3_000 };
 
 /** Des plus anciennes aux plus récentes : du brun au pêche. */
 const OLD = [184, 89, 28];
@@ -44,17 +48,14 @@ export function versionColor(order: string[], name: string | null | undefined): 
 
 export type ColorBy = 'year' | 'version';
 
-type Zoom = 'all' | 'core' | 'target' | { kmMin: number; kmMax: number };
-
 /**
- * Nuage prix / kilométrage : chaque point est une annonce en ligne.
+ * Nuage prix / kilométrage : chaque point est une annonce en ligne, le prix
+ * en abscisse, le kilométrage en ordonnée.
  *
- * Au survol, une fiche montre la photo et l'essentiel de l'annonce ; au
- * doigt, où le survol n'existe pas, un toucher l'affiche sous le graphique.
- * Le zoom se choisit comme une période en bourse — tout, le cœur du marché,
- * autour de sa voiture — ou en glissant horizontalement sur le graphique.
- * L'axe des prix suit toujours les seuls points visibles : c'est ce qui
- * écarte réellement les points d'un nuage tassé.
+ * Il se manipule comme une carte : la molette ou le trackpad zoome là où se
+ * trouve le curseur, le pincement aussi (trackpad comme écran tactile), le
+ * glisser déplace la vue. Revenir tout en arrière rend la molette à la page,
+ * qui défile de nouveau normalement.
  */
 export function PriceKmChart({
   points,
@@ -72,36 +73,32 @@ export function PriceKmChart({
   versionOrder?: string[];
   onPickVersion?: (name: string) => void;
 }) {
-  const containerRef = useRef<HTMLDivElement>(null);
+  // Ref de rappel : les écouteurs s'attachent à l'élément réellement monté.
+  const [element, setElement] = useState<HTMLDivElement | null>(null);
   const [width, setWidth] = useState(0);
-  const [zoom, setZoom] = useState<Zoom>('all');
+  const [view, setView] = useState<Domain | null>(null);
   const [hovered, setHovered] = useState<string | null>(null);
   const [pinned, setPinned] = useState<string | null>(null);
-  const [brush, setBrush] = useState<{ from: number; to: number } | null>(null);
-  const pointerType = useRef<string>('mouse');
+  const [dragging, setDragging] = useState(false);
   const leaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    const element = containerRef.current;
     if (!element) return;
     const observer = new ResizeObserver(([entry]) => setWidth(entry.contentRect.width));
     observer.observe(element);
     return () => observer.disconnect();
-  }, []);
+  }, [element]);
 
   const plotted = useMemo(
     () => points.filter((point): point is Plotted => point.km !== null),
     [points],
   );
 
-  // Un filtre qui retire la voiture épinglée, ou une cible qui disparaît, ne
-  // doit pas laisser une fiche ou une vue orpheline.
-  useEffect(() => {
-    if (zoom === 'target' && !target) setZoom('all');
-  }, [target, zoom]);
+  // Un autre filtre, c'est un autre nuage : la vue et la fiche repartent de zéro.
   useEffect(() => {
     setPinned(null);
     setHovered(null);
+    setView(null);
   }, [points]);
 
   const years = useMemo(() => {
@@ -109,61 +106,141 @@ export function PriceKmChart({
     return known.length ? { min: Math.min(...known), max: Math.max(...known) } : null;
   }, [plotted]);
 
-  const geometry = useMemo(() => {
-    if (!width || !plotted.length) return null;
-    const innerWidth = width - PADDING.left - PADDING.right;
-    const innerHeight = HEIGHT - PADDING.top - PADDING.bottom;
-
-    const kms = plotted.map((point) => point.km).sort((a, b) => a - b);
-    let kmMin: number;
-    let kmMax: number;
-    if (typeof zoom === 'object') {
-      ({ kmMin, kmMax } = zoom);
-    } else if (zoom === 'core') {
-      kmMin = niceFloor(at(kms, 0.05));
-      kmMax = niceCeil(at(kms, 0.95));
-    } else if (zoom === 'target' && target) {
-      const spread = Math.max(25_000, target.km * 0.25);
-      kmMin = Math.max(0, target.km - spread);
-      kmMax = target.km + spread;
-    } else {
-      const all = target ? [...kms, target.km] : kms;
-      kmMin = niceFloor(Math.min(...all) * 0.9);
-      kmMax = niceCeil(Math.max(...all) * 1.04);
+  /** Le nuage entier, cible comprise : la limite du dézoom. */
+  const full = useMemo<Domain | null>(() => {
+    if (!plotted.length) return null;
+    const prices = plotted.map((point) => point.price);
+    const kms = plotted.map((point) => point.km);
+    if (target) {
+      prices.push(target.price);
+      kms.push(target.km);
     }
-    if (kmMax <= kmMin) kmMax = kmMin + 1000;
+    const x0 = niceFloor(Math.min(...prices) * 0.94);
+    const x1 = niceCeil(Math.max(...prices) * 1.03);
+    const y0 = niceFloor(Math.min(...kms) * 0.9);
+    const y1 = niceCeil(Math.max(...kms) * 1.04);
+    return { x0, x1: x1 > x0 ? x1 : x0 + 1000, y0, y1: y1 > y0 ? y1 : y0 + 1000 };
+  }, [plotted, target]);
 
-    const inside = plotted.filter((point) => point.km >= kmMin && point.km <= kmMax);
-    let prices = inside.map((point) => point.price).sort((a, b) => a - b);
-    if (!prices.length) prices = plotted.map((point) => point.price).sort((a, b) => a - b);
-    // Au cœur du marché, les quelques annonces extrêmes sortent du cadre :
-    // ce sont elles qui écrasaient tout le reste.
-    let rawMin = zoom === 'core' ? at(prices, 0.03) : prices[0];
-    let rawMax = zoom === 'core' ? at(prices, 0.97) : prices[prices.length - 1];
-    if (target && target.km >= kmMin && target.km <= kmMax) {
-      rawMin = Math.min(rawMin, target.price);
-      rawMax = Math.max(rawMax, target.price);
+  const domain = view ?? full;
+  const innerWidth = Math.max(1, width - PADDING.left - PADDING.right);
+  const innerHeight = HEIGHT - PADDING.top - PADDING.bottom;
+
+  // Les gestionnaires natifs (molette, pincement) lisent l'état du moment
+  // sans se réabonner à chaque rendu.
+  const live = useRef({ domain, full, innerWidth, innerHeight, view });
+  live.current = { domain, full, innerWidth, innerHeight, view };
+
+  /** Zoome d'un facteur autour d'un point de l'écran (facteur < 1 : on se rapproche). */
+  function zoomAt(factor: number, px: number, py: number) {
+    const { domain: d, full: f, innerWidth: w, innerHeight: h } = live.current;
+    if (!d || !f) return;
+    const cx = d.x0 + ((px - PADDING.left) / w) * (d.x1 - d.x0);
+    const cy = d.y1 - ((py - PADDING.top) / h) * (d.y1 - d.y0);
+    let spanX = (d.x1 - d.x0) * factor;
+    let spanY = (d.y1 - d.y0) * factor;
+    if (spanX >= f.x1 - f.x0 && spanY >= f.y1 - f.y0) {
+      setView(null);
+      return;
     }
-    const pad = rawMax === rawMin ? rawMax * 0.1 : (rawMax - rawMin) * 0.08;
-    const minPrice = Math.max(0, rawMin - pad);
-    const maxPrice = rawMax + pad;
+    spanX = Math.min(Math.max(spanX, MIN_SPAN.price), f.x1 - f.x0);
+    spanY = Math.min(Math.max(spanY, MIN_SPAN.km), f.y1 - f.y0);
+    const shareX = (cx - d.x0) / (d.x1 - d.x0);
+    const shareY = (cy - d.y0) / (d.y1 - d.y0);
+    setView(contain({ x0: cx - shareX * spanX, x1: cx + (1 - shareX) * spanX, y0: cy - shareY * spanY, y1: cy + (1 - shareY) * spanY }, f));
+  }
 
-    const x = (km: number) => PADDING.left + ((km - kmMin) / (kmMax - kmMin)) * innerWidth;
-    const y = (price: number) =>
-      PADDING.top + innerHeight - ((price - minPrice) / (maxPrice - minPrice || 1)) * innerHeight;
-    const kmAt = (px: number) => kmMin + ((px - PADDING.left) / innerWidth) * (kmMax - kmMin);
+  function panBy(dxPixels: number, dyPixels: number) {
+    const { domain: d, full: f, innerWidth: w, innerHeight: h, view: v } = live.current;
+    if (!d || !f || !v) return;
+    const dx = (-dxPixels / w) * (d.x1 - d.x0);
+    const dy = (dyPixels / h) * (d.y1 - d.y0);
+    setView(contain({ x0: d.x0 + dx, x1: d.x1 + dx, y0: d.y0 + dy, y1: d.y1 + dy }, f));
+  }
 
-    return {
-      x,
-      y,
-      kmAt,
-      innerWidth,
-      innerHeight,
-      visible: inside.filter((point) => point.price >= minPrice && point.price <= maxPrice),
-      xTicks: ticks(kmMin, kmMax, width < 420 ? 4 : 6),
-      yTicks: ticks(minPrice, maxPrice, 5),
+  const actions = useRef({ zoomAt, panBy });
+  actions.current = { zoomAt, panBy };
+
+  // Molette et trackpad. L'écouteur doit être actif (non passif) pour que la
+  // page ne défile pas pendant qu'on zoome — sauf quand on dézoome déjà au
+  // maximum : la page reprend alors la main.
+  useEffect(() => {
+    if (!element) return;
+    const onWheel = (event: WheelEvent) => {
+      const zoomingOut = event.deltaY > 0;
+      if (zoomingOut && !live.current.view && !event.ctrlKey) return;
+      event.preventDefault();
+      const box = element.getBoundingClientRect();
+      const px = event.clientX - box.left;
+      const py = event.clientY - box.top;
+      if (Math.abs(event.deltaX) > Math.abs(event.deltaY) && live.current.view) {
+        actions.current.panBy(-event.deltaX, 0);
+        return;
+      }
+      // Pincer au trackpad arrive en molette avec Ctrl : plus ample, plus doux.
+      const speed = event.ctrlKey ? 0.012 : 0.0022;
+      actions.current.zoomAt(Math.exp(event.deltaY * speed), px, py);
     };
-  }, [plotted, target, width, zoom]);
+    element.addEventListener('wheel', onWheel, { passive: false });
+    return () => element.removeEventListener('wheel', onWheel);
+  }, [element]);
+
+  // Glisser pour se déplacer, pincer à deux doigts pour zoomer.
+  const pointers = useRef(new Map<number, { x: number; y: number }>());
+  const gesture = useRef({ moved: false, distance: 0, pointerType: 'mouse' });
+
+  function position(event: { clientX: number; clientY: number }) {
+    const box = element?.getBoundingClientRect();
+    return { x: event.clientX - (box?.left ?? 0), y: event.clientY - (box?.top ?? 0) };
+  }
+  function onPointerDown(event: React.PointerEvent<SVGSVGElement>) {
+    gesture.current.pointerType = event.pointerType;
+    if (event.pointerType === 'mouse' && event.button !== 0) return;
+    pointers.current.set(event.pointerId, position(event));
+    gesture.current.moved = false;
+    if (pointers.current.size === 2) {
+      const [a, b] = [...pointers.current.values()];
+      gesture.current.distance = Math.hypot(a.x - b.x, a.y - b.y);
+    }
+    // Capturer tout de suite volerait le clic aux points : on attend que
+    // le glisser commence réellement.
+  }
+  function onPointerMove(event: React.PointerEvent<SVGSVGElement>) {
+    const previous = pointers.current.get(event.pointerId);
+    if (!previous) return;
+    const current = position(event);
+    pointers.current.set(event.pointerId, current);
+
+    if (pointers.current.size === 2) {
+      const [a, b] = [...pointers.current.values()];
+      const distance = Math.hypot(a.x - b.x, a.y - b.y);
+      if (gesture.current.distance > 0) {
+        zoomAt(gesture.current.distance / distance, (a.x + b.x) / 2, (a.y + b.y) / 2);
+      }
+      gesture.current.distance = distance;
+      gesture.current.moved = true;
+      return;
+    }
+
+    const dx = current.x - previous.x;
+    const dy = current.y - previous.y;
+    if (!gesture.current.moved && Math.hypot(dx, dy) < 3) {
+      pointers.current.set(event.pointerId, previous);
+      return;
+    }
+    if (!gesture.current.moved) {
+      gesture.current.moved = true;
+      event.currentTarget.setPointerCapture(event.pointerId);
+      setHovered(null);
+      setDragging(true);
+    }
+    panBy(dx, dy);
+  }
+  function onPointerUp(event: React.PointerEvent<SVGSVGElement>) {
+    pointers.current.delete(event.pointerId);
+    if (pointers.current.size < 2) gesture.current.distance = 0;
+    if (!pointers.current.size) setDragging(false);
+  }
 
   const colorOf = (point: KmPoint) => {
     if (colorBy === 'version') return versionColor(versionOrder, point.version ?? 'Non précisée');
@@ -183,45 +260,32 @@ export function PriceKmChart({
     return reference ? (point.price - reference) / reference : null;
   };
 
-  const visibleCount = geometry?.visible.length ?? 0;
-  const radius = visibleCount > 300 ? 3 : visibleCount > 120 ? 3.8 : visibleCount > 40 ? 4.8 : 6;
-  const missing = points.length - plotted.length;
-  const flaggedCount = points.filter((point) => point.flags?.length).length;
+  if (!domain || !full) {
+    return <div ref={setElement} style={{ height: HEIGHT }} />;
+  }
+
+  const x = (price: number) => PADDING.left + ((price - domain.x0) / (domain.x1 - domain.x0)) * innerWidth;
+  const y = (km: number) => PADDING.top + innerHeight - ((km - domain.y0) / (domain.y1 - domain.y0)) * innerHeight;
+  const visible = plotted.filter(
+    (point) =>
+      point.price >= domain.x0 && point.price <= domain.x1 && point.km >= domain.y0 && point.km <= domain.y1,
+  );
+  const zoomLevel = (full.x1 - full.x0) / (domain.x1 - domain.x0);
+  const radius = Math.min(8, (visible.length > 250 ? 3 : visible.length > 100 ? 3.8 : 4.6) * Math.sqrt(Math.min(zoomLevel, 3)));
 
   const active = plotted.find((point) => point.lbcId === (hovered ?? pinned)) ?? null;
   const card = plotted.find((point) => point.lbcId === pinned) ?? null;
+  const missing = points.length - plotted.length;
+  const flaggedCount = points.filter((point) => point.flags?.length).length;
 
-  function onBackgroundDown(event: React.PointerEvent<SVGRectElement>) {
-    const box = event.currentTarget.ownerSVGElement!.getBoundingClientRect();
-    const from = event.clientX - box.left;
-    event.currentTarget.setPointerCapture(event.pointerId);
-    setBrush({ from, to: from });
-  }
-  function onBackgroundMove(event: React.PointerEvent<SVGRectElement>) {
-    if (!brush) return;
-    const box = event.currentTarget.ownerSVGElement!.getBoundingClientRect();
-    setBrush({ ...brush, to: event.clientX - box.left });
-  }
-  function onBackgroundUp() {
-    if (!brush || !geometry) {
-      setBrush(null);
-      return;
-    }
-    const low = Math.min(brush.from, brush.to);
-    const high = Math.max(brush.from, brush.to);
-    setBrush(null);
-    // Un simple toucher du fond referme la fiche plutôt que de zoomer.
-    if (high - low < 16) {
-      setPinned(null);
-      return;
-    }
-    const kmMin = Math.max(0, geometry.kmAt(low));
-    const kmMax = geometry.kmAt(high);
-    if (kmMax - kmMin >= 2_000) setZoom({ kmMin, kmMax });
-  }
+  const presets: { label: string; domain: Domain | null }[] = [
+    { label: 'Tout', domain: null },
+    { label: 'Cœur du marché', domain: core(plotted, full) },
+    ...(target ? [{ label: 'Autour de ta voiture', domain: around(target, full) }] : []),
+  ];
 
-  function enter(point: Plotted) {
-    if (pointerType.current !== 'mouse') return;
+  function enter(point: Plotted, pointerType: string) {
+    if (pointerType !== 'mouse' || dragging) return;
     if (leaveTimer.current) clearTimeout(leaveTimer.current);
     setHovered(point.lbcId);
   }
@@ -232,173 +296,152 @@ export function PriceKmChart({
   return (
     <div>
       <div className="mb-2 flex flex-wrap items-center gap-1.5 px-1">
-        <ZoomChip active={zoom === 'all'} onClick={() => setZoom('all')}>
-          Tout
-        </ZoomChip>
-        <ZoomChip active={zoom === 'core'} onClick={() => setZoom('core')}>
-          Cœur du marché
-        </ZoomChip>
-        {target && (
-          <ZoomChip active={zoom === 'target'} onClick={() => setZoom('target')}>
-            Autour de ta voiture
-          </ZoomChip>
-        )}
-        {typeof zoom === 'object' && (
-          <ZoomChip active onClick={() => setZoom('all')}>
-            {Math.round(zoom.kmMin / 1000)}–{Math.round(zoom.kmMax / 1000)}k km ✕
-          </ZoomChip>
+        {presets.map((preset) => (
+          <button
+            key={preset.label}
+            type="button"
+            onClick={() => setView(preset.domain)}
+            className={`rounded-lg px-2.5 py-1 text-[11px] outline-none ${
+              (preset.domain === null && view === null) || (view && preset.domain && sameDomain(view, preset.domain))
+                ? 'bg-ink-line text-zinc-100'
+                : 'text-zinc-500 hover:text-zinc-300'
+            }`}
+          >
+            {preset.label}
+          </button>
+        ))}
+        {view && (
+          <span className="ml-auto text-[11px] text-zinc-500">×{zoomLevel.toFixed(1)}</span>
         )}
       </div>
 
-      <div ref={containerRef} className="relative w-full" style={{ height: HEIGHT }}>
-        {geometry && (
-          <svg width={width} height={HEIGHT} className="block select-none" style={{ touchAction: 'pan-y' }}>
-            <defs>
-              <clipPath id="plot-area">
-                <rect
-                  x={PADDING.left}
-                  y={PADDING.top - 8}
-                  width={geometry.innerWidth + 8}
-                  height={geometry.innerHeight + 16}
-                />
-              </clipPath>
-            </defs>
+      <div ref={setElement} className="relative w-full overflow-hidden rounded-xl" style={{ height: HEIGHT }}>
+        <svg
+          width={width}
+          height={HEIGHT}
+          className="block select-none"
+          style={{
+            touchAction: view ? 'none' : 'pan-y',
+            cursor: dragging ? 'grabbing' : view ? 'grab' : 'default',
+          }}
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
+          onPointerCancel={onPointerUp}
+          onDoubleClick={(event) => {
+            const at = position(event);
+            zoomAt(0.5, at.x, at.y);
+          }}
+        >
+          <defs>
+            <clipPath id="plot-area">
+              <rect x={PADDING.left} y={PADDING.top} width={innerWidth} height={innerHeight} />
+            </clipPath>
+          </defs>
 
-            {geometry.yTicks.map((tick) => (
-              <g key={`y${tick}`}>
-                <line
-                  x1={PADDING.left}
-                  x2={width - PADDING.right}
-                  y1={geometry.y(tick)}
-                  y2={geometry.y(tick)}
-                  stroke="#23272e"
-                />
-                <text
-                  x={PADDING.left - 6}
-                  y={geometry.y(tick) + 3}
-                  textAnchor="end"
-                  className="fill-zinc-500 text-[10px]"
-                >
+          {ticks(domain.y0, domain.y1, 5).map((tick) => (
+            <g key={`y${tick}`}>
+              <line x1={PADDING.left} x2={width - PADDING.right} y1={y(tick)} y2={y(tick)} stroke="#23272e" />
+              <text x={PADDING.left - 6} y={y(tick) + 3} textAnchor="end" className="fill-zinc-500 text-[10px]">
+                {compactKm(tick)}
+              </text>
+            </g>
+          ))}
+          {ticks(domain.x0, domain.x1, width < 420 ? 4 : 6)
+            // Une graduation collée au bord se lirait coupée.
+            .filter((tick) => x(tick) <= width - PADDING.right - 44 && x(tick) >= PADDING.left + 4)
+            .map((tick) => (
+              <g key={`x${tick}`}>
+                <line x1={x(tick)} x2={x(tick)} y1={PADDING.top} y2={PADDING.top + innerHeight} stroke="#1a1d22" />
+                <text x={x(tick)} y={HEIGHT - 10} textAnchor="middle" className="fill-zinc-500 text-[10px]">
                   {compactPrice(tick)}
                 </text>
               </g>
             ))}
-            {geometry.xTicks
-              // Une graduation collée au bord se lirait coupée, ou chevaucherait
-              // sa voisine une fois repoussée : on s'en passe.
-              .filter((tick) => geometry.x(tick) <= width - PADDING.right - 22)
-              .map((tick) => (
-                <text
-                  key={`x${tick}`}
-                  x={geometry.x(tick)}
-                  y={HEIGHT - 8}
-                  textAnchor="middle"
-                  className="fill-zinc-500 text-[10px]"
-                >
-                  {`${Math.round(tick / 1000)}k km`}
-                </text>
+          <text x={width - PADDING.right} y={HEIGHT - 10} textAnchor="end" className="fill-zinc-600 text-[10px]">
+            prix →
+          </text>
+          <text x={PADDING.left - 6} y={10} textAnchor="end" className="fill-zinc-600 text-[10px]">
+            km ↑
+          </text>
+
+          <g clipPath="url(#plot-area)">
+            {trends
+              .filter((trend) => trend.points.length > 1)
+              .map((trend) => (
+                <polyline
+                  key={trend.version ?? 'all'}
+                  points={trend.points.map((step) => `${x(step.price)},${y(step.km)}`).join(' ')}
+                  fill="none"
+                  stroke={trend.version === null ? TREND : versionColor(versionOrder, trend.version)}
+                  strokeWidth={1.5}
+                  strokeDasharray="5 4"
+                  strokeLinejoin="round"
+                  pointerEvents="none"
+                />
               ))}
 
-            {/* Fond sensible au glisser : c'est lui qui trace la zone à zoomer. */}
-            <rect
-              x={PADDING.left}
-              y={PADDING.top}
-              width={geometry.innerWidth}
-              height={geometry.innerHeight}
-              fill="transparent"
-              className="cursor-crosshair"
-              onPointerDown={onBackgroundDown}
-              onPointerMove={onBackgroundMove}
-              onPointerUp={onBackgroundUp}
-              onPointerCancel={() => setBrush(null)}
-            />
+            {visible.map((point) => {
+              const isActive = active?.lbcId === point.lbcId;
+              const flagged = Boolean(point.flags?.length);
+              const color = colorOf(point);
+              return (
+                <circle
+                  key={point.lbcId}
+                  cx={x(point.price)}
+                  cy={y(point.km)}
+                  r={isActive ? radius + 3 : radius}
+                  fill={flagged ? 'transparent' : color}
+                  fillOpacity={active && !isActive ? 0.4 : 0.9}
+                  stroke={isActive ? '#fff' : flagged ? color : 'none'}
+                  strokeWidth={flagged && !isActive ? 1.5 : 2}
+                  strokeOpacity={active && !isActive ? 0.5 : 1}
+                  style={{ cursor: dragging ? 'grabbing' : 'pointer' }}
+                  onPointerEnter={(event) => enter(point, event.pointerType)}
+                  onPointerLeave={leave}
+                  onClick={() => {
+                    // La fin d'un glisser n'est pas un clic.
+                    if (gesture.current.moved) return;
+                    if (gesture.current.pointerType !== 'mouse') setPinned(pinned === point.lbcId ? null : point.lbcId);
+                    else window.open(point.url, '_blank', 'noopener,noreferrer');
+                  }}
+                />
+              );
+            })}
 
-            <g clipPath="url(#plot-area)">
-              {trends
-                .filter((trend) => trend.points.length > 1)
-                .map((trend) => (
-                  <polyline
-                    key={trend.version ?? 'all'}
-                    points={trend.points.map((step) => `${geometry.x(step.km)},${geometry.y(step.price)}`).join(' ')}
-                    fill="none"
-                    stroke={trend.version === null ? TREND : versionColor(versionOrder, trend.version)}
-                    strokeWidth={1.5}
-                    strokeDasharray="5 4"
-                    strokeLinejoin="round"
-                    pointerEvents="none"
-                  />
-                ))}
-
-              {geometry.visible.map((point) => {
-                const isActive = active?.lbcId === point.lbcId;
-                const flagged = Boolean(point.flags?.length);
-                const color = colorOf(point);
-                return (
-                  <circle
-                    key={point.lbcId}
-                    cx={geometry.x(point.km)}
-                    cy={geometry.y(point.price)}
-                    r={isActive ? radius + 3 : radius}
-                    fill={flagged ? 'transparent' : color}
-                    fillOpacity={active && !isActive ? 0.4 : 0.9}
-                    stroke={isActive ? '#fff' : flagged ? color : 'none'}
-                    strokeWidth={flagged && !isActive ? 1.5 : 2}
-                    strokeOpacity={active && !isActive ? 0.5 : 1}
-                    className="cursor-pointer"
-                    onPointerDown={(event) => {
-                      pointerType.current = event.pointerType;
-                    }}
-                    onPointerEnter={(event) => {
-                      pointerType.current = event.pointerType;
-                      enter(point);
-                    }}
-                    onPointerLeave={leave}
-                    onClick={() => {
-                      if (pointerType.current === 'mouse') {
-                        window.open(point.url, '_blank', 'noopener,noreferrer');
-                      } else {
-                        setPinned(pinned === point.lbcId ? null : point.lbcId);
-                      }
-                    }}
-                  />
-                );
-              })}
-
-              {target && (
-                <g pointerEvents="none">
-                  <circle
-                    cx={geometry.x(target.km)}
-                    cy={geometry.y(target.price)}
-                    r={9}
-                    fill="none"
-                    stroke={TARGET}
-                    strokeWidth={2}
-                  />
-                  <circle cx={geometry.x(target.km)} cy={geometry.y(target.price)} r={4} fill={TARGET} />
-                </g>
-              )}
-            </g>
-
-            {brush && Math.abs(brush.to - brush.from) > 4 && (
-              <rect
-                x={Math.min(brush.from, brush.to)}
-                y={PADDING.top}
-                width={Math.abs(brush.to - brush.from)}
-                height={geometry.innerHeight}
-                fill="#ff8f45"
-                fillOpacity={0.12}
-                stroke="#ff8f45"
-                strokeOpacity={0.5}
-                pointerEvents="none"
-              />
+            {target && (
+              <g pointerEvents="none">
+                <circle cx={x(target.price)} cy={y(target.km)} r={9} fill="none" stroke={TARGET} strokeWidth={2} />
+                <circle cx={x(target.price)} cy={y(target.km)} r={4} fill={TARGET} />
+              </g>
             )}
-          </svg>
-        )}
+          </g>
+        </svg>
 
-        {geometry && hovered && active && (
+        <div className="absolute right-2 top-2 flex flex-col overflow-hidden rounded-lg border border-ink-line bg-ink/80 backdrop-blur">
+          <button
+            type="button"
+            aria-label="Zoomer"
+            onClick={() => zoomAt(0.6, PADDING.left + innerWidth / 2, PADDING.top + innerHeight / 2)}
+            className="h-8 w-8 text-[16px] text-zinc-300 outline-none hover:bg-ink-line"
+          >
+            +
+          </button>
+          <button
+            type="button"
+            aria-label="Dézoomer"
+            disabled={!view}
+            onClick={() => zoomAt(1 / 0.6, PADDING.left + innerWidth / 2, PADDING.top + innerHeight / 2)}
+            className="h-8 w-8 border-t border-ink-line text-[16px] text-zinc-300 outline-none hover:bg-ink-line disabled:text-zinc-700"
+          >
+            −
+          </button>
+        </div>
+
+        {hovered && active && !dragging && (
           <div
             className="absolute z-10"
-            style={cardPosition(geometry.x(active.km), geometry.y(active.price), width)}
+            style={cardPosition(x(active.price), y(active.km), width)}
             onMouseEnter={() => {
               if (leaveTimer.current) clearTimeout(leaveTimer.current);
             }}
@@ -416,12 +459,9 @@ export function PriceKmChart({
               key={name}
               type="button"
               onClick={() => onPickVersion?.(name)}
-              className="flex items-center gap-1.5"
+              className="flex items-center gap-1.5 outline-none hover:text-zinc-300"
             >
-              <span
-                className="inline-block h-2.5 w-2.5 rounded-full"
-                style={{ background: versionColor(versionOrder, name) }}
-              />
+              <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: versionColor(versionOrder, name) }} />
               {name}
             </button>
           ))}
@@ -436,9 +476,7 @@ export function PriceKmChart({
             {years.min}
             <span
               className="inline-block h-2 w-16 rounded-full"
-              style={{
-                background: `linear-gradient(90deg, rgb(${OLD.join(',')}), rgb(${RECENT.join(',')}))`,
-              }}
+              style={{ background: `linear-gradient(90deg, rgb(${OLD.join(',')}), rgb(${RECENT.join(',')}))` }}
             />
             {years.max}
           </span>
@@ -472,32 +510,10 @@ export function PriceKmChart({
         </div>
       ) : (
         <p className="mt-3 px-1 text-[11px] text-zinc-600">
-          Survole ou touche un point pour voir l’annonce · glisse horizontalement pour zoomer.
+          Molette, trackpad ou pincement pour zoomer · glisser pour se déplacer · survole un point pour voir l’annonce.
         </p>
       )}
     </div>
-  );
-}
-
-function ZoomChip({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`rounded-lg px-2.5 py-1 text-[11px] ${
-        active ? 'bg-ink-line text-zinc-100' : 'text-zinc-500 active:bg-ink-line'
-      }`}
-    >
-      {children}
-    </button>
   );
 }
 
@@ -511,7 +527,7 @@ function AdCard({ point, gap, compact = false }: { point: Plotted; gap: number |
       href={point.url}
       target="_blank"
       rel="noopener noreferrer"
-      className={`block overflow-hidden rounded-xl border border-ink-line bg-ink shadow-2xl shadow-black/60 active:bg-ink-line ${
+      className={`block overflow-hidden rounded-xl border border-ink-line bg-ink shadow-2xl shadow-black/60 outline-none active:bg-ink-line ${
         compact ? '' : 'sm:flex'
       }`}
       style={compact ? { width: CARD_WIDTH } : undefined}
@@ -536,14 +552,12 @@ function AdCard({ point, gap, compact = false }: { point: Plotted; gap: number |
         </div>
       )}
       <div className="min-w-0 flex-1 px-3 py-2.5">
-        <div className="flex items-baseline justify-between gap-2">
-          <span className="text-[17px] font-semibold text-white">{formatPrice(point.price)}</span>
-          {gap !== null && Math.abs(gap) >= 0.01 && (
-            <span className={`text-right text-[11px] ${gap < 0 ? 'text-down' : 'text-zinc-400'}`}>
-              {Math.round(Math.abs(gap) * 100)} % {gap < 0 ? 'sous' : 'au-dessus de'} la médiane
-            </span>
-          )}
-        </div>
+        <div className="text-[17px] font-semibold text-white">{formatPrice(point.price)}</div>
+        {gap !== null && Math.abs(gap) >= 0.01 && (
+          <div className={`text-[11px] ${gap < 0 ? 'text-down' : 'text-zinc-400'}`}>
+            {Math.round(Math.abs(gap) * 100)} % {gap < 0 ? 'sous' : 'au-dessus de'} la médiane à ce km
+          </div>
+        )}
         <div className="mt-0.5 line-clamp-2 text-[12px] leading-snug text-zinc-200">{point.title}</div>
         <div className="mt-1 text-[11px] text-zinc-400">{details.join(' · ')}</div>
         {point.version && (
@@ -569,6 +583,50 @@ function AdCard({ point, gap, compact = false }: { point: Plotted; gap: number |
       </div>
     </a>
   );
+}
+
+/** Garde la fenêtre à l'intérieur du nuage entier, en la décalant au besoin. */
+function contain(d: Domain, f: Domain): Domain {
+  const spanX = d.x1 - d.x0;
+  const spanY = d.y1 - d.y0;
+  const x0 = Math.min(Math.max(d.x0, f.x0), f.x1 - spanX);
+  const y0 = Math.min(Math.max(d.y0, f.y0), f.y1 - spanY);
+  return { x0, x1: x0 + spanX, y0, y1: y0 + spanY };
+}
+
+/** Le gros des annonces, sans les quelques extrêmes qui tassent tout le reste. */
+function core(points: Plotted[], f: Domain): Domain {
+  const prices = points.map((point) => point.price).sort((a, b) => a - b);
+  const kms = points.map((point) => point.km).sort((a, b) => a - b);
+  const padX = (at(prices, 0.95) - at(prices, 0.05)) * 0.06;
+  const padY = (at(kms, 0.95) - at(kms, 0.05)) * 0.06;
+  return contain(
+    {
+      x0: Math.max(f.x0, at(prices, 0.05) - padX),
+      x1: Math.min(f.x1, at(prices, 0.95) + padX),
+      y0: Math.max(f.y0, at(kms, 0.05) - padY),
+      y1: Math.min(f.y1, at(kms, 0.95) + padY),
+    },
+    f,
+  );
+}
+
+function around(target: { km: number; price: number }, f: Domain): Domain {
+  const spreadX = Math.max(3_000, target.price * 0.25);
+  const spreadY = Math.max(25_000, target.km * 0.3);
+  return contain(
+    {
+      x0: Math.max(f.x0, target.price - spreadX),
+      x1: Math.min(f.x1, target.price + spreadX),
+      y0: Math.max(f.y0, target.km - spreadY),
+      y1: Math.min(f.y1, target.km + spreadY),
+    },
+    f,
+  );
+}
+
+function sameDomain(a: Domain, b: Domain): boolean {
+  return Math.abs(a.x0 - b.x0) < 1 && Math.abs(a.x1 - b.x1) < 1 && Math.abs(a.y0 - b.y0) < 1 && Math.abs(a.y1 - b.y1) < 1;
 }
 
 /** Place la fiche à côté du point, du côté où elle tient. */
@@ -632,4 +690,8 @@ function compactPrice(value: number): string {
     return `${Number.isInteger(thousands) ? thousands : thousands.toFixed(1)}k€`;
   }
   return `${Math.round(value)}€`;
+}
+
+function compactKm(value: number): string {
+  return value >= 1000 ? `${Math.round(value / 1000)}k km` : `${Math.round(value)} km`;
 }

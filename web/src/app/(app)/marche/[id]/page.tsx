@@ -3,6 +3,7 @@
 import { use, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { CollectProgress, type Activity } from '@/components/collect-progress';
 import { PriceKmChart, type ColorBy } from '@/components/price-km-chart';
 import { useApi } from '@/lib/client';
 import { analyze, estimate, plausible, type Ad } from '@/lib/estimation';
@@ -20,6 +21,7 @@ interface Detail {
     ads: number;
     error: string | null;
     collectedAt: string | null;
+    activity?: Activity | null;
   };
   ads: Ad[];
 }
@@ -44,7 +46,8 @@ export default function EstimationPage({ params }: { params: Promise<{ id: strin
 
   useEffect(() => {
     if (!collecting) return;
-    const timer = setInterval(() => void reload(), 4000);
+    // Assez souvent pour que l'écran de collecte paraisse vivant.
+    const timer = setInterval(() => void reload(), 2000);
     return () => clearInterval(timer);
   }, [collecting, reload]);
 
@@ -144,20 +147,13 @@ export default function EstimationPage({ params }: { params: Promise<{ id: strin
       </header>
 
       {collecting && (
-        <div className="mb-3 rounded-2xl border border-accent/40 bg-accent/10 px-4 py-3 text-[13px] text-accent-soft">
-          {status === 'queued' ? (
-            'En file d’attente — le collecteur termine une autre tâche.'
-          ) : estimation.pages === 0 ? (
-            'Ouverture de la recherche sur leboncoin…'
-          ) : (
-            <>
-              Collecte en cours : page {estimation.pages}, {estimation.ads} annonces lues.
-              <span className="mt-0.5 block text-[11px] text-zinc-400">
-                Quelques secondes par page, pour rester discret auprès de leboncoin.
-              </span>
-            </>
-          )}
-        </div>
+        <CollectProgress
+          label={`${estimation.brand} ${estimation.model}`}
+          status={status === 'queued' ? 'queued' : 'running'}
+          pages={estimation.pages}
+          ads={estimation.ads}
+          activity={estimation.activity}
+        />
       )}
 
       {status === 'error' && (
@@ -220,7 +216,9 @@ export default function EstimationPage({ params }: { params: Promise<{ id: strin
               <>
                 <div className="mt-4 flex items-end justify-between gap-3">
                   <div>
-                    <div className="text-[10px] uppercase tracking-wide text-zinc-600">Prix médian</div>
+                    <div className="text-[10px] uppercase tracking-wide text-zinc-600">
+                      Prix médian{version === ALL && several ? ', tous moteurs' : ''}
+                    </div>
                     <div className="text-3xl font-semibold tracking-tight text-white">
                       {formatPrice(analysis.median)}
                     </div>
@@ -244,6 +242,29 @@ export default function EstimationPage({ params }: { params: Promise<{ id: strin
                 </p>
 
                 {version === ALL && several && (
+                  // Mélanger deux moteurs donne un prix qui ne décrit aucune
+                  // voiture : celui de chaque moteur est le vrai repère.
+                  <div className="mt-3 flex flex-wrap gap-1.5">
+                    {analysis.versions
+                      .filter((item) => item.count >= 3 && item.name !== UNKNOWN)
+                      .slice(0, 4)
+                      .map((item) => (
+                        <button
+                          key={item.name}
+                          type="button"
+                          onClick={() => setVersion(item.name)}
+                          className="rounded-lg border border-ink-line bg-ink px-2.5 py-1.5 text-left outline-none hover:border-zinc-600"
+                        >
+                          <div className="text-[10px] text-zinc-500">
+                            {item.name} · {item.count}
+                          </div>
+                          <div className="text-[13px] font-medium text-zinc-100">{formatPrice(item.median)}</div>
+                        </button>
+                      ))}
+                  </div>
+                )}
+
+                {version === ALL && several && (
                   <div className="mt-3 flex items-center gap-2 text-[11px] text-zinc-500">
                     Couleur
                     <div className="flex rounded-lg border border-ink-line p-0.5">
@@ -252,7 +273,7 @@ export default function EstimationPage({ params }: { params: Promise<{ id: strin
                           key={mode}
                           type="button"
                           onClick={() => setColorBy(mode)}
-                          className={`rounded-md px-2.5 py-1 ${
+                          className={`rounded-md px-2.5 py-1 outline-none ${
                             colorBy === mode ? 'bg-ink-line text-zinc-100' : 'text-zinc-500'
                           }`}
                         >

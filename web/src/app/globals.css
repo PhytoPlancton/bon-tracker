@@ -43,3 +43,40 @@ body {
     scrollbar-width: none;
   }
 }
+
+/* Écran de collecte : les annonces lues arrivent une à une. */
+@keyframes feed-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+/* Sans remplissage : si l'animation ne tourne pas (onglet en arrière-plan,
+   économie d'énergie), l'élément reste simplement visible. */
+.animate-feed-in {
+  animation: feed-in 320ms ease-out;
+}
+
+/* Barre d'avancement quand le total est inconnu. */
+@keyframes sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(250%);
+  }
+}
+.animate-sweep {
+  animation: sweep 1.6s ease-in-out infinite;
+}
+
+/* Le contour de focus sert au clavier ; au clic, il n'est qu'un cadre parasite. */
+button:focus:not(:focus-visible),
+a:focus:not(:focus-visible),
+select:focus:not(:focus-visible) {
+  outline: none;
+}

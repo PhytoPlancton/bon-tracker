@@ -102,8 +102,12 @@ Remplace la lecture par segment : on choisit une voiture, on voit ce qu'elle vau
       de tout calcul
 - [x] Fiche au survol / au toucher : photo, prix, km, boîte, vendeur, écart à
       la médiane au même km
-- [x] Zoom : Tout / Cœur du marché / Autour de ta voiture, glisser pour une
-      plage de km, axe des prix recalé sur les points visibles
+- [x] Graphique manipulable comme une carte : prix en abscisse, km en
+      ordonnée, molette / trackpad / pincement pour zoomer sous le curseur,
+      glisser pour se déplacer, raccourcis Tout / Cœur du marché / Ta voiture
+- [x] Écran de collecte en direct : étapes, compteur, avancement, annonces
+      lues qui défilent
+- [x] Médiane par moteur ; pas d'« affaire » sans moteur connu
 
 ## Hors scope V1
 Alertes e-mail/Telegram, multi-utilisateur, application native.

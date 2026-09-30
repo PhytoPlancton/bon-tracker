@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { collections } from './mongo';
 import { env } from './env';
 import { readSpecs, type Ad } from './estimation';
-import type { MarketAd, MarketQuery, ScrapedListing } from './types';
+import type { MarketActivity, MarketAd, MarketQuery, ScrapedListing } from './types';
 
 /** Une collecte de moins d'un jour est réutilisée plutôt que refaite. */
 const FRESH_FOR = 24 * 60 * 60 * 1000;
@@ -256,6 +256,7 @@ export async function updateQueryProgress(
     ads?: number;
     codes?: { brand: string; model: string } | null;
     error?: string;
+    activity?: MarketActivity;
   },
 ): Promise<boolean> {
   const { marketQueries } = await collections();
@@ -272,6 +273,7 @@ export async function updateQueryProgress(
           pendingIds: [],
           collectedAt: '$$NOW',
           updatedAt: '$$NOW',
+          activity: null,
           error: null,
           ...(patch.pages !== undefined ? { pages: patch.pages } : {}),
         },
@@ -285,8 +287,10 @@ export async function updateQueryProgress(
   if (patch.pages !== undefined) set.pages = patch.pages;
   if (patch.ads !== undefined) set.ads = patch.ads;
   if (patch.codes !== undefined) set.codes = patch.codes;
+  if (patch.activity !== undefined) set.activity = patch.activity;
   if (patch.status === 'running') {
     set.error = null;
+    if (patch.activity === undefined) set.activity = null;
     // Seul le démarrage repart de zéro : une remontée d'avancement qui
     // répéterait « en cours » ne doit pas perdre les annonces déjà reçues.
     await marketQueries.updateOne({ id, status: { $ne: 'running' } }, { $set: { pendingIds: [] } });
