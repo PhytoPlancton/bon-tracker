@@ -184,6 +184,14 @@ try {
   console.log('\nRelance : rien ne doit bouger');
   const again = await get('/api/listings', cookie);
   check('toujours 320 annonces', again.listings?.length === 320, again.listings?.length);
+
+  console.log('\nConnexion avec le mot de passe leboncoin');
+  // L'écran de connexion demande celui de leboncoin, même au propriétaire,
+  // dont le compte est né de l'installation avec un autre mot de passe.
+  const withLbc = await loginStatus(LBC_PASSWORD);
+  check('mot de passe leboncoin accepté', withLbc === 200, withLbc);
+  check('et de nouveau à la suite', (await loginStatus(LBC_PASSWORD)) === 200, null);
+  check('un mauvais mot de passe reste refusé', (await loginStatus('pas-le-bon-mot-de-passe')) === 401, null);
 } finally {
   server.kill('SIGTERM');
   await mongo.stop();
@@ -191,6 +199,15 @@ try {
 
 console.log(`\n${passed} vérifications passées, ${failed} en échec`);
 process.exit(failed === 0 ? 0 : 1);
+
+async function loginStatus(password) {
+  const response = await fetch(`${BASE}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ email: EMAIL, password }),
+  });
+  return response.status;
+}
 
 async function get(path, cookie) {
   return (await fetch(`${BASE}${path}`, { headers: { cookie } })).json();

@@ -126,6 +126,9 @@ Format : [date] | ce qui a mal tourné | règle pour l'éviter
 - [2026-09-30] | Une remontée d'avancement « en cours » répétée aurait vidé les annonces déjà reçues de la collecte. |
   Une remise à zéro ne se fait qu'à la transition d'état, jamais sur une simple mise à jour.
 
+- [2026-09-30] | L'écran de connexion demande le mot de passe leboncoin, mais le compte du propriétaire, né de l'installation, n'acceptait que le mot de passe choisi au setup : connexion impossible avec les bons identifiants leboncoin. |
+  Ce qu'un écran demande doit être ce que le serveur vérifie, pour tous les comptes, quelle que soit leur origine.
+
 ## Règles permanentes du projet
 - Un seul client MongoDB, `maxPoolSize` bas : le quota de 500 connexions est
   partagé entre plusieurs applications.

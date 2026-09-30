@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { randomUUID, timingSafeEqual } from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import { collections } from './mongo';
 import { decrypt, encrypt } from './crypto';
@@ -40,11 +40,32 @@ export async function findUserByUid(uid: string): Promise<User | null> {
   return users.findOne({ uid }, { projection: { _id: 0 } });
 }
 
-/** Compare en temps constant, et sans révéler si l'adresse existe. */
+/**
+ * Compare en temps constant, et sans révéler si l'adresse existe.
+ *
+ * Le compte du propriétaire est né de l'installation, avec un mot de passe
+ * propre à l'application, alors que l'écran de connexion demande celui de
+ * leboncoin. Ce dernier, conservé chiffré pour le collecteur, est donc accepté
+ * aussi ; il devient alors le mot de passe du compte, comme pour les autres.
+ */
 export async function verifyPassword(user: User | null, password: string): Promise<boolean> {
   const hash = user?.passwordHash ?? '$2a$12$invalidinvalidinvalidinvalidinvalidinvalidinvalidinvalidinv';
   const matches = await bcrypt.compare(password, hash);
-  return Boolean(user) && matches;
+  if (!user) return false;
+  if (matches) return true;
+
+  const stored = openSealed(user.lbcPassword);
+  if (!stored || !sameText(stored, password)) return false;
+
+  const { users } = await collections();
+  await users.updateOne({ uid: user.uid }, { $set: { passwordHash: await bcrypt.hash(password, 12) } });
+  return true;
+}
+
+function sameText(a: string, b: string): boolean {
+  const left = Buffer.from(a, 'utf8');
+  const right = Buffer.from(b, 'utf8');
+  return left.length === right.length && timingSafeEqual(left, right);
 }
 
 /**
