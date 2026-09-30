@@ -242,29 +242,6 @@ export default function EstimationPage({ params }: { params: Promise<{ id: strin
                 </p>
 
                 {version === ALL && several && (
-                  // Mélanger deux moteurs donne un prix qui ne décrit aucune
-                  // voiture : celui de chaque moteur est le vrai repère.
-                  <div className="mt-3 flex flex-wrap gap-1.5">
-                    {analysis.versions
-                      .filter((item) => item.count >= 3 && item.name !== UNKNOWN)
-                      .slice(0, 4)
-                      .map((item) => (
-                        <button
-                          key={item.name}
-                          type="button"
-                          onClick={() => setVersion(item.name)}
-                          className="rounded-lg border border-ink-line bg-ink px-2.5 py-1.5 text-left outline-none hover:border-zinc-600"
-                        >
-                          <div className="text-[10px] text-zinc-500">
-                            {item.name} · {item.count}
-                          </div>
-                          <div className="text-[13px] font-medium text-zinc-100">{formatPrice(item.median)}</div>
-                        </button>
-                      ))}
-                  </div>
-                )}
-
-                {version === ALL && several && (
                   <div className="mt-3 flex items-center gap-2 text-[11px] text-zinc-500">
                     Couleur
                     <div className="flex rounded-lg border border-ink-line p-0.5">

@@ -278,12 +278,6 @@ export function PriceKmChart({
   const missing = points.length - plotted.length;
   const flaggedCount = points.filter((point) => point.flags?.length).length;
 
-  const presets: { label: string; domain: Domain | null }[] = [
-    { label: 'Tout', domain: null },
-    { label: 'Cœur du marché', domain: core(plotted, full) },
-    ...(target ? [{ label: 'Autour de ta voiture', domain: around(target, full) }] : []),
-  ];
-
   function enter(point: Plotted, pointerType: string) {
     if (pointerType !== 'mouse' || dragging) return;
     if (leaveTimer.current) clearTimeout(leaveTimer.current);
@@ -295,27 +289,7 @@ export function PriceKmChart({
 
   return (
     <div>
-      <div className="mb-2 flex flex-wrap items-center gap-1.5 px-1">
-        {presets.map((preset) => (
-          <button
-            key={preset.label}
-            type="button"
-            onClick={() => setView(preset.domain)}
-            className={`rounded-lg px-2.5 py-1 text-[11px] outline-none ${
-              (preset.domain === null && view === null) || (view && preset.domain && sameDomain(view, preset.domain))
-                ? 'bg-ink-line text-zinc-100'
-                : 'text-zinc-500 hover:text-zinc-300'
-            }`}
-          >
-            {preset.label}
-          </button>
-        ))}
-        {view && (
-          <span className="ml-auto text-[11px] text-zinc-500">×{zoomLevel.toFixed(1)}</span>
-        )}
-      </div>
-
-      <div ref={setElement} className="relative w-full overflow-hidden rounded-xl" style={{ height: HEIGHT }}>
+      <div ref={setElement} className="relative w-full" style={{ height: HEIGHT }}>
         <svg
           width={width}
           height={HEIGHT}
@@ -436,17 +410,21 @@ export function PriceKmChart({
           >
             −
           </button>
+          {view && (
+            <button
+              type="button"
+              aria-label="Revenir à la vue complète"
+              title="Revenir à la vue complète"
+              onClick={() => setView(null)}
+              className="h-8 w-8 border-t border-ink-line text-[13px] text-zinc-300 outline-none hover:bg-ink-line"
+            >
+              ⤢
+            </button>
+          )}
         </div>
 
         {hovered && active && !dragging && (
-          <div
-            className="absolute z-10"
-            style={cardPosition(x(active.price), y(active.km), width)}
-            onMouseEnter={() => {
-              if (leaveTimer.current) clearTimeout(leaveTimer.current);
-            }}
-            onMouseLeave={leave}
-          >
+          <div className="pointer-events-none absolute z-20" style={cardPosition(x(active.price), y(active.km), width)}>
             <AdCard point={active} gap={gapOf(active)} compact />
           </div>
         )}
@@ -594,47 +572,20 @@ function contain(d: Domain, f: Domain): Domain {
   return { x0, x1: x0 + spanX, y0, y1: y0 + spanY };
 }
 
-/** Le gros des annonces, sans les quelques extrêmes qui tassent tout le reste. */
-function core(points: Plotted[], f: Domain): Domain {
-  const prices = points.map((point) => point.price).sort((a, b) => a - b);
-  const kms = points.map((point) => point.km).sort((a, b) => a - b);
-  const padX = (at(prices, 0.95) - at(prices, 0.05)) * 0.06;
-  const padY = (at(kms, 0.95) - at(kms, 0.05)) * 0.06;
-  return contain(
-    {
-      x0: Math.max(f.x0, at(prices, 0.05) - padX),
-      x1: Math.min(f.x1, at(prices, 0.95) + padX),
-      y0: Math.max(f.y0, at(kms, 0.05) - padY),
-      y1: Math.min(f.y1, at(kms, 0.95) + padY),
-    },
-    f,
-  );
-}
+/** Hauteur approchée de la fiche, photo comprise. */
+const CARD_HEIGHT = 250;
 
-function around(target: { km: number; price: number }, f: Domain): Domain {
-  const spreadX = Math.max(3_000, target.price * 0.25);
-  const spreadY = Math.max(25_000, target.km * 0.3);
-  return contain(
-    {
-      x0: Math.max(f.x0, target.price - spreadX),
-      x1: Math.min(f.x1, target.price + spreadX),
-      y0: Math.max(f.y0, target.km - spreadY),
-      y1: Math.min(f.y1, target.km + spreadY),
-    },
-    f,
-  );
-}
-
-function sameDomain(a: Domain, b: Domain): boolean {
-  return Math.abs(a.x0 - b.x0) < 1 && Math.abs(a.x1 - b.x1) < 1 && Math.abs(a.y0 - b.y0) < 1 && Math.abs(a.y1 - b.y1) < 1;
-}
-
-/** Place la fiche à côté du point, du côté où elle tient. */
+/**
+ * Place la fiche juste au-dessus du point, centrée sur lui ; en dessous
+ * seulement quand le point est trop haut pour qu'elle tienne. Elle ne
+ * recouvre ainsi jamais le point, et reste dans la largeur du graphique.
+ */
 function cardPosition(px: number, py: number, width: number): React.CSSProperties {
-  const right = px + 16 + CARD_WIDTH <= width;
-  const left = right ? px + 16 : Math.max(0, px - 16 - CARD_WIDTH);
-  const top = Math.min(Math.max(0, py - 90), HEIGHT - 150);
-  return { left, top, width: CARD_WIDTH };
+  const left = Math.min(Math.max(0, px - CARD_WIDTH / 2), Math.max(0, width - CARD_WIDTH));
+  const above = py - 14 - CARD_HEIGHT >= -PADDING.top - 60;
+  return above
+    ? { left, top: py - 14, width: CARD_WIDTH, transform: 'translateY(-100%)' }
+    : { left, top: py + 14, width: CARD_WIDTH };
 }
 
 /** Les vignettes du site sont minuscules ; la même photo existe en plus grand. */
@@ -654,11 +605,6 @@ function interpolate(steps: { km: number; price: number }[], km: number): number
     }
   }
   return null;
-}
-
-function at(sorted: number[], q: number): number {
-  if (!sorted.length) return 0;
-  return sorted[Math.min(sorted.length - 1, Math.max(0, Math.round((sorted.length - 1) * q)))];
 }
 
 function ticks(min: number, max: number, count: number): number[] {
