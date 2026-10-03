@@ -22,11 +22,13 @@ export interface MarketSpec {
 const MAX_PAGES = 20;
 
 /**
- * Vingt pages à six secondes près tiennent en quatre minutes. Au double, la
- * collecte est bloquée — page qui ne répond plus, vérification anti-robot —
- * et doit le dire plutôt que laisser l'application attendre sans fin.
+ * Une page de résultats se lit en une demi-minute environ, pause comprise.
+ * Sans nouvelle page depuis ce délai, la collecte est bloquée — page qui ne
+ * répond plus, vérification anti-robot — et doit le dire plutôt que laisser
+ * l'application attendre sans fin. Un plafond sur la durée totale coupait au
+ * contraire une collecte longue mais saine : seize pages lues, rien gardé.
  */
-const JOB_TIMEOUT_MS = 8 * 60 * 1000;
+const STALL_TIMEOUT_MS = 3 * 60 * 1000;
 
 /**
  * Relève toutes les annonces d'un modèle.
@@ -55,10 +57,19 @@ export async function runMarketJob(spec: MarketSpec, log: (message: string) => v
   let browser: Browser | null = null;
   let page: Page | null = null;
   let timedOut = false;
-  const deadline = setTimeout(() => {
-    timedOut = true;
-    void page?.close().catch(() => undefined);
-  }, JOB_TIMEOUT_MS);
+  let deadline: NodeJS.Timeout | undefined;
+  const watch = () => {
+    clearTimeout(deadline);
+    deadline = setTimeout(() => {
+      timedOut = true;
+      void page?.close().catch(() => undefined);
+    }, STALL_TIMEOUT_MS);
+  };
+  watch();
+
+  const all = new Map<string, ScrapedListing>();
+  let codes = spec.codes;
+  let pagesRead = 0;
 
   // La connexion au navigateur est dans le bloc surveillé : un Chrome fermé
   // doit se lire comme un échec dans l'application, pas comme une collecte
@@ -67,7 +78,6 @@ export async function runMarketJob(spec: MarketSpec, log: (message: string) => v
     browser = await connectToChrome(log);
     page = await mainContext(browser).newPage();
 
-    let codes = spec.codes;
     await say(codes ? `Recherche des ${label} sur leboncoin` : `Recherche de « ${label} » sur leboncoin`);
     let first = await collectListings(page, searchUrl(spec, codes, 1));
 
@@ -86,8 +96,9 @@ export async function runMarketJob(spec: MarketSpec, log: (message: string) => v
     }
     total = await readTotal(page, first.length);
 
-    const all = new Map<string, ScrapedListing>();
     add(all, first);
+    pagesRead = 1;
+    watch();
     await updateMarketQuery(spec.queryId, {
       pages: 1,
       ads: all.size,
@@ -101,6 +112,8 @@ export async function runMarketJob(spec: MarketSpec, log: (message: string) => v
       const found = await collectListings(page, searchUrl(spec, codes, number));
       const fresh = found.filter((ad) => !all.has(ad.lbcId));
       add(all, found);
+      pagesRead = number;
+      watch();
       const gained = all.size - before;
       log(`[marché] ${label} : page ${number}, ${gained} nouvelles (${all.size} au total)`);
       await updateMarketQuery(spec.queryId, {
@@ -116,17 +129,20 @@ export async function runMarketJob(spec: MarketSpec, log: (message: string) => v
       if (gained === 0) break;
     }
 
-    const kept = [...all.values()].filter((ad) => belongs(ad, spec, codes));
-    await say(`Tri de ${all.size} annonces : ${kept.length} sont bien des ${label}`, { total });
-    for (let i = 0; i < kept.length; i += 200) {
-      await ingestMarketAds(spec.queryId, kept.slice(i, i + 200));
-    }
-
-    await updateMarketQuery(spec.queryId, { status: 'done', ads: kept.length });
-    log(`[marché] ${label} : ${kept.length} annonces retenues sur ${all.size} vues`);
+    await keep(all, spec, codes, label, total, log);
   } catch (cause) {
+    // Des centaines d'annonces déjà lues valent mieux qu'un échec : on garde
+    // ce qui a été vu avant le blocage.
+    if (timedOut && all.size) {
+      log(`[marché] ${label} : bloqué après ${pagesRead} page(s), on garde ce qui a été lu`);
+      const saved = await keep(all, spec, codes, label, total, log).then(
+        () => true,
+        () => false,
+      );
+      if (saved) return;
+    }
     const message = timedOut
-      ? `Collecte interrompue après ${JOB_TIMEOUT_MS / 60_000} minutes sans aboutir. Vérifie la fenêtre Chrome dédiée (vérification anti-robot ?) puis relance.`
+      ? `Aucune page lue en ${STALL_TIMEOUT_MS / 60_000} minutes. Vérifie la fenêtre Chrome dédiée (vérification anti-robot ?) puis relance.`
       : cause instanceof Error
         ? cause.message
         : String(cause);
@@ -139,6 +155,26 @@ export async function runMarketJob(spec: MarketSpec, log: (message: string) => v
     await page?.close().catch(() => undefined);
     await browser?.close().catch(() => undefined);
   }
+}
+
+/** Trie les annonces lues, les verse dans la base et clôt la collecte. */
+async function keep(
+  all: Map<string, ScrapedListing>,
+  spec: MarketSpec,
+  codes: { brand: string; model: string } | null,
+  label: string,
+  total: number | null,
+  log: (message: string) => void,
+): Promise<void> {
+  const kept = [...all.values()].filter((ad) => belongs(ad, spec, codes));
+  await updateMarketQuery(spec.queryId, {
+    activity: { step: `Tri de ${all.size} annonces : ${kept.length} sont bien des ${label}`, recent: [], total },
+  }).catch(() => undefined);
+  for (let i = 0; i < kept.length; i += 200) {
+    await ingestMarketAds(spec.queryId, kept.slice(i, i + 200));
+  }
+  await updateMarketQuery(spec.queryId, { status: 'done', ads: kept.length });
+  log(`[marché] ${label} : ${kept.length} annonces retenues sur ${all.size} vues`);
 }
 
 function searchUrl(
