@@ -18,7 +18,7 @@ export class NeedsManualSession extends Error {
  * de débogage dont l'en-tête Host n'est ni une adresse IP ni « localhost », ce
  * qui écarterait « host.docker.internal ».
  */
-export async function connectToChrome(): Promise<Browser> {
+export async function connectToChrome(log: (message: string) => void = () => undefined): Promise<Browser> {
   let address = config.chromeHost;
   try {
     address = (await lookup(config.chromeHost)).address;
@@ -27,22 +27,182 @@ export async function connectToChrome(): Promise<Browser> {
   }
 
   const endpoint = `http://${address}:${config.chromePort}`;
+  for (const note of await releaseStuckTabs(endpoint)) log(note);
+
   try {
-    // Le rattachement énumère les onglets ouverts : quelques secondes ne
-    // suffisent pas sur un navigateur chargé, et l'échec ressemble alors à
-    // un Chrome absent alors qu'il répond.
     return await chromium.connectOverCDP(endpoint, { timeout: 60_000 });
   } catch (cause) {
     const detail = cause instanceof Error ? cause.message : String(cause);
     // Distinguer les deux cas : un Chrome absent et un Chrome qui tarde
     // appellent des gestes différents.
     const reachable = /ws connected/i.test(detail);
+    // Le journal d'appels de Playwright n'apprend rien à qui lit l'application.
+    const summary = detail.split('\n')[0];
     throw new NeedsManualSession(
       reachable
-        ? `Chrome répond sur ${endpoint} mais tarde à s'ouvrir. Ferme les onglets inutiles du Chrome dédié, puis relance. (${detail})`
-        : `Chrome introuvable sur ${endpoint}. Lance start-chrome.cmd sur le PC et laisse la fenêtre ouverte. (${detail})`,
+        ? `Chrome répond sur ${endpoint} mais un de ses onglets ne répond plus. Ouvre le Chrome dédié : un onglet attend sans doute une réponse (alerte, « Quitter le site ? »). Réponds-y ou ferme-le, puis relance. (${summary})`
+        : `Chrome introuvable sur ${endpoint}. Lance start-chrome.cmd sur le PC et laisse la fenêtre ouverte. (${summary})`,
     );
   }
+}
+
+/** Délai au-delà duquel un onglet est tenu pour figé. */
+const TAB_PROBE_MS = 5_000;
+
+/**
+ * Débloque les onglets figés par une boîte de dialogue.
+ *
+ * Playwright ne rend la main qu'une fois chaque onglet ouvert prêt à être
+ * piloté. Une alerte, une confirmation ou un « Quitter le site ? » restés sans
+ * réponse dans un seul onglet suffisent à le bloquer jusqu'au délai : l'onglet
+ * ne répond plus à rien tant que la boîte est ouverte. Ce n'est pas le nombre
+ * d'onglets qui compte — trente se rattachent en une fraction de seconde.
+ *
+ * Chrome ne laisse pas fermer à distance une boîte ouverte avant notre
+ * arrivée. Recharger l'onglet la fait disparaître en gardant la page ; seul le
+ * « Quitter le site ? » résiste, et on referme alors l'onglet, ce que la
+ * personne avait demandé en le quittant.
+ *
+ * Tout échec ici est sans conséquence : le rattachement qui suit dira mieux
+ * que nous si Chrome est absent.
+ */
+async function releaseStuckTabs(endpoint: string): Promise<string[]> {
+  let cdp: CdpConnection | null = null;
+  try {
+    const response = await fetch(`${endpoint}/json/version`, { signal: AbortSignal.timeout(TAB_PROBE_MS) });
+    const { webSocketDebuggerUrl } = (await response.json()) as { webSocketDebuggerUrl: string };
+    cdp = await openCdp(webSocketDebuggerUrl);
+    const connection = cdp;
+
+    const { targetInfos } = await connection.send<{ targetInfos: TargetInfo[] }>('Target.getTargets');
+    const tabs = targetInfos.filter((target) => target.type === 'page');
+    const outcomes = await Promise.all(tabs.map((tab) => reloadIfStuck(connection, tab)));
+    const stuck = tabs.filter((_, index) => outcomes[index] === 'stuck');
+    const notes = tabs
+      .filter((_, index) => outcomes[index] === 'reloaded')
+      .map((tab) => `Onglet « ${tabName(tab)} » figé par une boîte de dialogue : rechargé`);
+
+    // Refermer le dernier onglet fermerait Chrome avec lui.
+    if (stuck.length && stuck.length === tabs.length) {
+      await connection.send('Target.createTarget', { url: 'about:blank' });
+    }
+    for (const tab of stuck) {
+      await connection.send('Target.closeTarget', { targetId: tab.targetId });
+      notes.push(`Onglet « ${tabName(tab)} » figé par une boîte de dialogue : refermé`);
+    }
+    return notes;
+  } catch {
+    return [];
+  } finally {
+    cdp?.close();
+  }
+}
+
+async function reloadIfStuck(cdp: CdpConnection, tab: TargetInfo): Promise<'ok' | 'reloaded' | 'stuck'> {
+  let sessionId: string;
+  try {
+    ({ sessionId } = await cdp.send<{ sessionId: string }>('Target.attachToTarget', {
+      targetId: tab.targetId,
+      flatten: true,
+    }));
+  } catch {
+    return 'ok';
+  }
+
+  try {
+    if (await responds(cdp, sessionId)) return 'ok';
+    await cdp.send('Page.reload', {}, sessionId).catch(() => undefined);
+    return (await responds(cdp, sessionId)) ? 'reloaded' : 'stuck';
+  } finally {
+    await cdp.send('Target.detachFromTarget', { sessionId }).catch(() => undefined);
+  }
+}
+
+/**
+ * L'onglet répond-il ? Une erreur est une réponse : seule une page bloquée
+ * se tait, une page en plein chargement dit qu'elle n'a pas encore de contexte.
+ */
+async function responds(cdp: CdpConnection, sessionId: string): Promise<boolean> {
+  try {
+    await cdp.send('Runtime.evaluate', { expression: '0' }, sessionId);
+    return true;
+  } catch (cause) {
+    return !(cause instanceof CdpTimeout);
+  }
+}
+
+function tabName(tab: TargetInfo): string {
+  return (tab.title || tab.url).slice(0, 80);
+}
+
+interface TargetInfo {
+  targetId: string;
+  type: string;
+  title: string;
+  url: string;
+}
+
+class CdpTimeout extends Error {}
+
+interface CdpConnection {
+  send<T = unknown>(method: string, params?: object, sessionId?: string): Promise<T>;
+  close(): void;
+}
+
+/**
+ * Le strict nécessaire du protocole de Chrome. Playwright n'en offre pas
+ * d'accès en dehors d'un rattachement complet — celui-là même qui reste
+ * bloqué.
+ */
+function openCdp(url: string): Promise<CdpConnection> {
+  return new Promise((resolve, reject) => {
+    const socket = new WebSocket(url);
+    const pending = new Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void }>();
+    let lastId = 0;
+
+    socket.addEventListener('message', (event) => {
+      const message = JSON.parse(String(event.data)) as {
+        id?: number;
+        result?: unknown;
+        error?: { message: string };
+      };
+      const waiter = message.id === undefined ? undefined : pending.get(message.id);
+      if (!waiter || message.id === undefined) return;
+      pending.delete(message.id);
+      if (message.error) waiter.reject(new Error(message.error.message));
+      else waiter.resolve(message.result);
+    });
+    socket.addEventListener('close', () => {
+      for (const waiter of pending.values()) waiter.reject(new Error('Connexion à Chrome fermée'));
+      pending.clear();
+    });
+    socket.addEventListener('error', () => reject(new Error('Connexion à Chrome impossible')));
+    socket.addEventListener('open', () =>
+      resolve({
+        send<T>(method: string, params: object = {}, sessionId?: string): Promise<T> {
+          return new Promise<T>((resolveSend, rejectSend) => {
+            const id = ++lastId;
+            const timer = setTimeout(() => {
+              pending.delete(id);
+              rejectSend(new CdpTimeout(`${method} sans réponse`));
+            }, TAB_PROBE_MS);
+            pending.set(id, {
+              resolve: (value) => {
+                clearTimeout(timer);
+                resolveSend(value as T);
+              },
+              reject: (error) => {
+                clearTimeout(timer);
+                rejectSend(error);
+              },
+            });
+            socket.send(JSON.stringify({ id, method, params, sessionId }));
+          });
+        },
+        close: () => socket.close(),
+      }),
+    );
+  });
 }
 
 /**

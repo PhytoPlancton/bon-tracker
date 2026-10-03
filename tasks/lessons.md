@@ -141,6 +141,9 @@ Format : [date] | ce qui a mal tourné | règle pour l'éviter
 - [2026-09-30] | Une animation d'apparition avec remplissage « both » laissait les éléments invisibles tant qu'elle ne tournait pas (onglet masqué). |
   Une animation d'entrée ne doit jamais être la condition de la visibilité : sans remplissage, l'état par défaut reste visible.
 
+- [2026-10-03] | Le rattachement au Chrome dédié expirait : on l'a cru lent sous le nombre d'onglets, porté le délai à 60 s et conseillé d'en fermer. Reproduit, trente onglets se rattachent en 0,3 s ; c'est un seul onglet resté sur une alerte ou un « Quitter le site ? » qui bloquait tout, sans fin. |
+  Reproduire une panne avant d'en corriger la cause supposée : allonger un délai ne soigne pas une attente qui ne finira jamais.
+
 ## Règles permanentes du projet
 - Un seul client MongoDB, `maxPoolSize` bas : le quota de 500 connexions est
   partagé entre plusieurs applications.

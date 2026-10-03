@@ -139,6 +139,14 @@ Trois causes possibles, que le message précise :
 - le site demande une vérification → l'ouvrir dans ce Chrome et faire glisser
   le curseur soi-même, puis relancer un relevé.
 
+**« Chrome répond … mais un de ses onglets ne répond plus »**
+Un onglet du Chrome dédié attend une réponse à une boîte de dialogue (alerte,
+confirmation, « Quitter le site ? ») : tant qu'elle est ouverte, le collecteur
+ne peut pas s'y rattacher. Il recharge lui-même ces onglets, ou referme ceux qui
+demandaient à être quittés, et le note dans `docker compose logs worker`. Si le
+message persiste, ouvrir ce Chrome, répondre à la boîte ou fermer l'onglet,
+puis relancer.
+
 **Le worker redémarre en boucle**
 Une variable d'environnement manque : il s'arrête volontairement plutôt que de
 tourner à moitié. `docker compose logs worker` nomme la variable fautive.
