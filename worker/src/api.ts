@@ -130,6 +130,8 @@ export interface MarketActivity {
 }
 
 export interface MarketQueryPatch {
+  /** L'envoi que ce relevé sert : l'application écarte celui d'un envoi remplacé. */
+  runId?: string;
   activity?: MarketActivity;
   status?: 'running' | 'done' | 'error';
   pages?: number;
@@ -140,7 +142,8 @@ export interface MarketQueryPatch {
 
 /** Avancement d'une collecte de marché, affiché en direct dans l'application. */
 export function updateMarketQuery(queryId: string, patch: MarketQueryPatch) {
-  return call<{ ok: boolean }>(`/api/internal/market/queries/${encodeURIComponent(queryId)}`, {
+  // stop : arrêt demandé depuis l'application, ou collecte confiée à un envoi plus récent.
+  return call<{ ok: boolean; stop?: boolean }>(`/api/internal/market/queries/${encodeURIComponent(queryId)}`, {
     method: 'PATCH',
     body: JSON.stringify(patch),
   });

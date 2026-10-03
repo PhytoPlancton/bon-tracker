@@ -24,6 +24,7 @@ interface Detail {
     error: string | null;
     collectedAt: string | null;
     activity?: Activity | null;
+    stopRequested?: boolean;
   };
   ads: Ad[];
 }
@@ -41,6 +42,7 @@ export default function EstimationPage({ params }: { params: Promise<{ id: strin
   const [year, setYear] = useState('');
   const [km, setKm] = useState('');
   const [refreshing, setRefreshing] = useState(false);
+  const [stopping, setStopping] = useState(false);
   const [colorBy, setColorBy] = useState<ColorBy>('version');
 
   const status = data?.estimation.status;
@@ -111,6 +113,13 @@ export default function EstimationPage({ params }: { params: Promise<{ id: strin
     setRefreshing(false);
   }
 
+  async function stop() {
+    setStopping(true);
+    await fetch(`/api/estimations/${id}/stop`, { method: 'POST' });
+    await reload();
+    setStopping(false);
+  }
+
   async function remove() {
     if (!confirm('Supprimer cette estimation ?')) return;
     await fetch(`/api/estimations/${id}`, { method: 'DELETE' });
@@ -156,6 +165,20 @@ export default function EstimationPage({ params }: { params: Promise<{ id: strin
           ads={estimation.ads}
           activity={estimation.activity}
         />
+      )}
+
+      {collecting && (
+        <button
+          onClick={stop}
+          disabled={stopping || estimation.stopRequested}
+          className="mb-3 w-full rounded-xl border border-ink-line bg-ink-soft py-2.5 text-[14px] text-zinc-200 disabled:opacity-50"
+        >
+          {estimation.stopRequested
+            ? 'Arrêt demandé : fin de la page en cours…'
+            : status === 'queued'
+              ? 'Annuler cette collecte'
+              : 'Arrêter et garder ce qui a été lu'}
+        </button>
       )}
 
       {status === 'error' && (

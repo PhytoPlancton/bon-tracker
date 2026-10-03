@@ -159,6 +159,10 @@ export interface MarketQuery {
   createdAt: Date;
   /** Ce que fait le collecteur en ce moment, pour l'écran d'attente. */
   activity?: MarketActivity | null;
+  /** Arrêt demandé depuis l'application : le collecteur garde ce qu'il a lu et s'arrête. */
+  stopRequested?: boolean;
+  /** Identifie l'envoi en cours au collecteur : un envoi plus ancien qui se réveille est écarté. */
+  runId?: string;
   /** Dernière nouvelle du collecteur : sans elle depuis trop longtemps, la collecte est morte. */
   updatedAt?: Date;
   collectedAt: Date | null;

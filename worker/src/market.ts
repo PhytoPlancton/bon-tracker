@@ -7,6 +7,8 @@ import { collectListings } from './scrape.js';
 /** Ce qu'on cherche : un modèle, éventuellement une tranche d'années. */
 export interface MarketSpec {
   queryId: string;
+  /** Envoi de l'application que cette collecte sert. */
+  runId?: string;
   brand: string;
   model: string;
   yearMin: number | null;
@@ -42,13 +44,24 @@ const STALL_TIMEOUT_MS = 3 * 60 * 1000;
  */
 export async function runMarketJob(spec: MarketSpec, log: (message: string) => void): Promise<void> {
   const label = `${spec.brand} ${spec.model}`.trim();
-  await updateMarketQuery(spec.queryId, { status: 'running', pages: 0, ads: 0 });
+  const start = await updateMarketQuery(spec.queryId, {
+    runId: spec.runId,
+    status: 'running',
+    pages: 0,
+    ads: 0,
+  });
+  // Annulée pendant qu'elle attendait son tour : rien à faire.
+  if (start.stop) {
+    log(`[marché] ${label} : annulée avant de commencer`);
+    return;
+  }
 
   log(`[marché] ${label} : ouverture de la recherche`);
   const say = (step: string, extra: Partial<MarketActivity> = {}) =>
-    updateMarketQuery(spec.queryId, { activity: { step, recent: [], total: null, ...extra } }).catch(
-      () => undefined,
-    );
+    updateMarketQuery(spec.queryId, {
+      runId: spec.runId,
+      activity: { step, recent: [], total: null, ...extra },
+    }).catch(() => undefined);
   let total: number | null = null;
   await say('Connexion au navigateur');
 
@@ -99,12 +112,14 @@ export async function runMarketJob(spec: MarketSpec, log: (message: string) => v
     add(all, first);
     pagesRead = 1;
     watch();
-    await updateMarketQuery(spec.queryId, {
+    const firstReport = await updateMarketQuery(spec.queryId, {
+      runId: spec.runId,
       pages: 1,
       ads: all.size,
       codes,
       activity: { step: `Page 1 lue · ${first.length} annonces`, recent: preview(first), total },
     });
+    if (firstReport.stop) throw new StopRequested();
 
     for (let number = 2; number <= MAX_PAGES; number += 1) {
       await pause();
@@ -116,7 +131,8 @@ export async function runMarketJob(spec: MarketSpec, log: (message: string) => v
       watch();
       const gained = all.size - before;
       log(`[marché] ${label} : page ${number}, ${gained} nouvelles (${all.size} au total)`);
-      await updateMarketQuery(spec.queryId, {
+      const report = await updateMarketQuery(spec.queryId, {
+        runId: spec.runId,
         pages: number,
         ads: all.size,
         activity: {
@@ -125,12 +141,18 @@ export async function runMarketJob(spec: MarketSpec, log: (message: string) => v
           total,
         },
       });
+      if (report.stop) throw new StopRequested();
       // Une page sans rien de neuf : on a fait le tour.
       if (gained === 0) break;
     }
 
     await keep(all, spec, codes, label, total, log);
   } catch (cause) {
+    if (cause instanceof StopRequested) {
+      log(`[marché] ${label} : arrêtée à la demande après ${pagesRead} page(s)`);
+      await keep(all, spec, codes, label, total, log).catch(() => undefined);
+      return;
+    }
     // Des centaines d'annonces déjà lues valent mieux qu'un échec : on garde
     // ce qui a été vu avant le blocage.
     if (timedOut && all.size) {
@@ -147,7 +169,11 @@ export async function runMarketJob(spec: MarketSpec, log: (message: string) => v
         ? cause.message
         : String(cause);
     log(`[marché] ${label} : échec — ${message}`);
-    await updateMarketQuery(spec.queryId, { status: 'error', error: message.slice(0, 500) }).catch(
+    await updateMarketQuery(spec.queryId, {
+      runId: spec.runId,
+      status: 'error',
+      error: message.slice(0, 500),
+    }).catch(
       () => undefined,
     );
   } finally {
@@ -156,6 +182,9 @@ export async function runMarketJob(spec: MarketSpec, log: (message: string) => v
     await browser?.close().catch(() => undefined);
   }
 }
+
+/** L'application a demandé l'arrêt : on garde ce qui a été lu. */
+class StopRequested extends Error {}
 
 /** Trie les annonces lues, les verse dans la base et clôt la collecte. */
 async function keep(
@@ -168,12 +197,13 @@ async function keep(
 ): Promise<void> {
   const kept = [...all.values()].filter((ad) => belongs(ad, spec, codes));
   await updateMarketQuery(spec.queryId, {
+    runId: spec.runId,
     activity: { step: `Tri de ${all.size} annonces : ${kept.length} sont bien des ${label}`, recent: [], total },
   }).catch(() => undefined);
   for (let i = 0; i < kept.length; i += 200) {
     await ingestMarketAds(spec.queryId, kept.slice(i, i + 200));
   }
-  await updateMarketQuery(spec.queryId, { status: 'done', ads: kept.length });
+  await updateMarketQuery(spec.queryId, { runId: spec.runId, status: 'done', ads: kept.length });
   log(`[marché] ${label} : ${kept.length} annonces retenues sur ${all.size} vues`);
 }
 

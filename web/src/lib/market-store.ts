@@ -133,7 +133,7 @@ export async function createQuery(
   );
 
   const query = mine
-    ? { ...mine, status: 'queued' as const, error: null, codes: mine.codes ?? known?.codes ?? null, updatedAt: new Date() }
+    ? { ...mine, status: 'queued' as const, error: null, stopRequested: false, codes: mine.codes ?? known?.codes ?? null, updatedAt: new Date() }
     : buildQuery(uid, input, key, { codes: known?.codes ?? null });
 
   await marketQueries.updateOne({ id: query.id }, { $set: query }, { upsert: true });
@@ -178,12 +178,17 @@ function escape(text: string): string {
 /** Confie la collecte au collecteur, qui répond aussitôt et travaille ensuite. */
 export async function dispatch(query: MarketQuery): Promise<void> {
   const { marketQueries } = await collections();
+  // Annuler puis relancer aussitôt laisse l'ancien envoi dans la file du
+  // collecteur : sans cette marque, il repartirait à côté du nouveau.
+  const runId = randomUUID();
+  await marketQueries.updateOne({ id: query.id }, { $set: { runId } });
   try {
     const response = await fetch(`${env.workerUrl}/market`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-worker-token': env.workerToken },
       body: JSON.stringify({
         queryId: query.id,
+        runId,
         brand: query.brand,
         model: query.model,
         yearMin: query.yearMin,
@@ -215,10 +220,43 @@ export async function refreshQuery(uid: string, id: string): Promise<MarketQuery
   if (!query) return null;
   if (query.status === 'queued' || query.status === 'running') return query;
 
-  const next = { ...query, status: 'queued' as const, error: null };
-  await marketQueries.updateOne({ id }, { $set: { status: 'queued', error: null, updatedAt: new Date() } });
+  const next = { ...query, status: 'queued' as const, error: null, stopRequested: false };
+  await marketQueries.updateOne(
+    { id },
+    { $set: { status: 'queued', error: null, stopRequested: false, updatedAt: new Date() } },
+  );
   await dispatch(next);
   return next;
+}
+
+/**
+ * Arrête une collecte. En attente, elle est annulée sur-le-champ ; en cours,
+ * le collecteur le lit à la page suivante, garde ce qu'il a déjà lu et
+ * s'arrête. Une collecte en attente n'a pas encore occupé le navigateur :
+ * rien à garder.
+ */
+export async function stopQuery(uid: string, id: string): Promise<MarketQuery | null> {
+  const { marketQueries } = await collections();
+  const query = await marketQueries.findOne({ uid, id }, { projection: { _id: 0 } });
+  if (!query) return null;
+
+  if (query.status === 'queued') {
+    await marketQueries.updateOne(
+      { id, status: 'queued' },
+      {
+        $set: {
+          status: 'error',
+          error: 'Collecte annulée avant d’avoir commencé.',
+          stopRequested: true,
+          activity: null,
+          updatedAt: new Date(),
+        },
+      },
+    );
+  } else if (query.status === 'running') {
+    await marketQueries.updateOne({ id, status: 'running' }, { $set: { stopRequested: true } });
+  }
+  return marketQueries.findOne({ uid, id }, { projection: { _id: 0 } });
 }
 
 // ---------------------------------------------------------------------------
@@ -268,6 +306,7 @@ export async function ingestMarketAds(queryId: string, scraped: ScrapedListing[]
 export async function updateQueryProgress(
   id: string,
   patch: {
+    runId?: string;
     status?: 'running' | 'done' | 'error';
     pages?: number;
     ads?: number;
@@ -275,8 +314,16 @@ export async function updateQueryProgress(
     error?: string;
     activity?: MarketActivity;
   },
-): Promise<boolean> {
+): Promise<{ found: boolean; stop: boolean }> {
   const { marketQueries } = await collections();
+  const current = await marketQueries.findOne({ id }, { projection: { stopRequested: 1, runId: 1 } });
+  if (!current) return { found: false, stop: false };
+  const superseded = Boolean(patch.runId && current.runId && patch.runId !== current.runId);
+  // Un envoi remplacé ne doit plus rien écrire : la collecte appartient au nouveau.
+  if (superseded) return { found: true, stop: true };
+  const stop = current.stopRequested === true;
+  // Une collecte annulée en attente ne doit pas repartir quand son tour vient.
+  if (stop && patch.status === 'running') return { found: true, stop };
 
   if (patch.status === 'done') {
     // La collecte réussie remplace la précédente d'un bloc : jamais de
@@ -292,11 +339,12 @@ export async function updateQueryProgress(
           updatedAt: '$$NOW',
           activity: null,
           error: null,
+          stopRequested: false,
           ...(patch.pages !== undefined ? { pages: patch.pages } : {}),
         },
       },
     ]);
-    return result.matchedCount > 0;
+    return { found: result.matchedCount > 0, stop };
   }
 
   const set: Record<string, unknown> = { updatedAt: new Date() };
@@ -315,8 +363,10 @@ export async function updateQueryProgress(
   // En cas d'échec, la dernière collecte réussie reste consultable.
   if (patch.status === 'error') set.error = patch.error ?? 'Échec de la collecte';
 
+  if (patch.status === 'error') set.stopRequested = false;
+
   const result = await marketQueries.updateOne({ id }, { $set: set });
-  return result.matchedCount > 0;
+  return { found: result.matchedCount > 0, stop };
 }
 
 // ---------------------------------------------------------------------------
