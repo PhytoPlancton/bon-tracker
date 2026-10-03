@@ -61,7 +61,7 @@ export async function runMarketJob(spec: MarketSpec, log: (message: string) => v
   // doit se lire comme un échec dans l'application, pas comme une collecte
   // qui n'avance plus.
   try {
-    browser = await connectToChrome();
+    browser = await connectToChrome(log);
     page = await mainContext(browser).newPage();
 
     let codes = spec.codes;
