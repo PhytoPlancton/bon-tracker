@@ -11,6 +11,9 @@ export interface MarketSpec {
   model: string;
   yearMin: number | null;
   yearMax: number | null;
+  /** Puissance DIN en chevaux, pour isoler une motorisation dans un modèle très diffusé. */
+  powerMin: number | null;
+  powerMax: number | null;
   /** Codes du site pour ce modèle, s'ils ont déjà été établis. */
   codes: { brand: string; model: string } | null;
 }
@@ -153,6 +156,9 @@ function searchUrl(
   if (spec.yearMin || spec.yearMax) {
     params.set('regdate', `${spec.yearMin ?? 'min'}-${spec.yearMax ?? 'max'}`);
   }
+  if (spec.powerMin || spec.powerMax) {
+    params.set('horse_power_din', `${spec.powerMin ?? 'min'}-${spec.powerMax ?? 'max'}`);
+  }
   if (page > 1) params.set('page', String(page));
   return `${LBC_ORIGIN}/recherche?${params.toString()}`;
 }
@@ -190,6 +196,7 @@ function belongs(
   codes: { brand: string; model: string } | null,
 ): boolean {
   if (ad.price === null) return false;
+  if (!withinPower(ad, spec)) return false;
   const code = ad.attributes?.u_car_model;
   if (codes && code) return code === codes.model;
   // Sans code, le titre fait foi : tous les mots du modèle doivent y figurer.
@@ -198,6 +205,19 @@ function belongs(
     .split(' ')
     .filter(Boolean)
     .every((word) => title.includes(word));
+}
+
+/**
+ * La puissance publiée tient-elle dans la fourchette demandée ? Le site filtre
+ * déjà la recherche ; on revérifie ce qu'il rend, sans écarter une annonce
+ * muette sur sa puissance.
+ */
+function withinPower(ad: ScrapedListing, spec: MarketSpec): boolean {
+  const power = wholeNumber(ad.attributes?.horse_power_din);
+  if (power === null) return true;
+  if (spec.powerMin !== null && power < spec.powerMin) return false;
+  if (spec.powerMax !== null && power > spec.powerMax) return false;
+  return true;
 }
 
 /**

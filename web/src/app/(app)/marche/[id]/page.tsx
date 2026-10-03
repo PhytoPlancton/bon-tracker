@@ -7,7 +7,7 @@ import { CollectProgress, type Activity } from '@/components/collect-progress';
 import { PriceKmChart, type ColorBy } from '@/components/price-km-chart';
 import { useApi } from '@/lib/client';
 import { analyze, estimate, plausible, type Ad } from '@/lib/estimation';
-import { formatPrice, relativeTime, yearsLabel } from '@/lib/format';
+import { formatPrice, relativeTime, criteriaLabel } from '@/lib/format';
 
 interface Detail {
   estimation: {
@@ -16,6 +16,8 @@ interface Detail {
     model: string;
     yearMin: number | null;
     yearMax: number | null;
+    powerMin?: number | null;
+    powerMax?: number | null;
     status: 'queued' | 'running' | 'done' | 'error';
     pages: number;
     ads: number;
@@ -141,7 +143,7 @@ export default function EstimationPage({ params }: { params: Promise<{ id: strin
           {estimation.brand} {estimation.model}
         </h1>
         <p className="text-xs text-zinc-500">
-          {yearsLabel(estimation)}
+          {criteriaLabel(estimation)}
           {estimation.collectedAt && ` · relevé ${relativeTime(estimation.collectedAt)}`}
         </p>
       </header>
