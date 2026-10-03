@@ -7,6 +7,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const schema = z.object({
+  runId: z.string().max(64).optional(),
   status: z.enum(['running', 'done', 'error']).optional(),
   pages: z.number().int().nonnegative().optional(),
   ads: z.number().int().nonnegative().optional(),
@@ -41,8 +42,8 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
   if (!parsed.success) return NextResponse.json({ error: 'Requête invalide' }, { status: 400 });
 
   const { id } = await context.params;
-  const found = await updateQueryProgress(id, parsed.data);
+  const { found, stop } = await updateQueryProgress(id, parsed.data);
   return found
-    ? NextResponse.json({ ok: true })
+    ? NextResponse.json({ ok: true, stop })
     : NextResponse.json({ error: 'Collecte inconnue' }, { status: 404 });
 }

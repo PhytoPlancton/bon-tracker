@@ -52,6 +52,7 @@ export function startCommandServer(): void {
             runMarketJob(
               {
                 queryId,
+                runId: typeof body.runId === 'string' ? body.runId : undefined,
                 brand,
                 model,
                 yearMin: year(body.yearMin),
