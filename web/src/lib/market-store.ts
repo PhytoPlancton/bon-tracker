@@ -60,8 +60,21 @@ async function settleStale(): Promise<void> {
   );
 }
 
-export function queryKey(brand: string, model: string, yearMin: number | null, yearMax: number | null) {
-  return [normalize(brand), normalize(model), yearMin ?? '', yearMax ?? ''].join('|');
+type QueryInput = {
+  brand: string;
+  model: string;
+  yearMin: number | null;
+  yearMax: number | null;
+  powerMin: number | null;
+  powerMax: number | null;
+};
+
+export function queryKey(input: QueryInput) {
+  const key = [normalize(input.brand), normalize(input.model), input.yearMin ?? '', input.yearMax ?? ''];
+  // Sans puissance, la clé reste celle d'avant : les estimations existantes
+  // se retrouvent.
+  if (input.powerMin || input.powerMax) key.push(`${input.powerMin ?? ''}-${input.powerMax ?? ''}ch`);
+  return key.join('|');
 }
 
 function normalize(text: string): string {
@@ -86,11 +99,11 @@ export type CreateOutcome =
  */
 export async function createQuery(
   uid: string,
-  input: { brand: string; model: string; yearMin: number | null; yearMax: number | null },
+  input: QueryInput,
 ): Promise<CreateOutcome> {
   await settleStale();
   const { marketQueries } = await collections();
-  const key = queryKey(input.brand, input.model, input.yearMin, input.yearMax);
+  const key = queryKey(input);
 
   const mine = await marketQueries.findOne({ uid, key }, { projection: { _id: 0 } });
   if (mine && (mine.status === 'queued' || mine.status === 'running')) {
@@ -130,7 +143,7 @@ export async function createQuery(
 
 function buildQuery(
   uid: string,
-  input: { brand: string; model: string; yearMin: number | null; yearMax: number | null },
+  input: QueryInput,
   key: string,
   overrides: Partial<MarketQuery>,
 ): MarketQuery {
@@ -141,6 +154,8 @@ function buildQuery(
     model: input.model.trim(),
     yearMin: input.yearMin,
     yearMax: input.yearMax,
+    powerMin: input.powerMin,
+    powerMax: input.powerMax,
     key,
     status: 'queued',
     pages: 0,
@@ -173,6 +188,8 @@ export async function dispatch(query: MarketQuery): Promise<void> {
         model: query.model,
         yearMin: query.yearMin,
         yearMax: query.yearMax,
+        powerMin: query.powerMin ?? null,
+        powerMax: query.powerMax ?? null,
         codes: query.codes,
       }),
       signal: AbortSignal.timeout(10_000),

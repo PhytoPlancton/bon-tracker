@@ -142,7 +142,10 @@ export interface MarketQuery {
   model: string;
   yearMin: number | null;
   yearMax: number | null;
-  /** Clé de mutualisation : même modèle et mêmes années, même collecte. */
+  /** Puissance DIN en chevaux ; absente des estimations plus anciennes. */
+  powerMin?: number | null;
+  powerMax?: number | null;
+  /** Clé de mutualisation : même modèle, mêmes années et même puissance, même collecte. */
   key: string;
   status: MarketQueryStatus;
   pages: number;

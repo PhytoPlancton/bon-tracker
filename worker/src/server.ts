@@ -38,6 +38,8 @@ export function startCommandServer(): void {
 
           const year = (value: unknown) =>
             typeof value === 'number' && value > 1900 && value < 2100 ? value : null;
+          const power = (value: unknown) =>
+            typeof value === 'number' && value > 0 && value < 2000 ? value : null;
           const codes =
             body.codes && typeof body.codes === 'object'
               ? (body.codes as { brand: string; model: string })
@@ -48,7 +50,16 @@ export function startCommandServer(): void {
           reply(202, { queued: true });
           void exclusive(() =>
             runMarketJob(
-              { queryId, brand, model, yearMin: year(body.yearMin), yearMax: year(body.yearMax), codes },
+              {
+                queryId,
+                brand,
+                model,
+                yearMin: year(body.yearMin),
+                yearMax: year(body.yearMax),
+                powerMin: power(body.powerMin),
+                powerMax: power(body.powerMax),
+                codes,
+              },
               log,
             ),
           ).catch((cause) => log(`[marché] échec inattendu : ${String(cause)}`));

@@ -17,11 +17,18 @@ const year = z
   .optional()
   .transform((value) => value ?? null);
 
+const power = z
+  .union([z.number().int().min(1).max(1999), z.null()])
+  .optional()
+  .transform((value) => value ?? null);
+
 const schema = z.object({
   brand: z.string().trim().min(1).max(40),
   model: z.string().trim().min(1).max(60),
   yearMin: year,
   yearMax: year,
+  powerMin: power,
+  powerMax: power,
 });
 
 /** Demande l'estimation d'un modèle : réutilise une collecte récente ou en lance une. */
@@ -35,6 +42,9 @@ export async function POST(request: Request) {
   }
   if (parsed.data.yearMin && parsed.data.yearMax && parsed.data.yearMin > parsed.data.yearMax) {
     return NextResponse.json({ error: 'L’année de début dépasse celle de fin.' }, { status: 400 });
+  }
+  if (parsed.data.powerMin && parsed.data.powerMax && parsed.data.powerMin > parsed.data.powerMax) {
+    return NextResponse.json({ error: 'La puissance mini dépasse la maxi.' }, { status: 400 });
   }
 
   const outcome = await createQuery(uid, parsed.data);
