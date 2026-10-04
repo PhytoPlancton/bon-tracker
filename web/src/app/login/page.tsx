@@ -28,7 +28,8 @@ function LoginForm() {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ email, password }),
-        signal: AbortSignal.timeout(20_000),
+        // Un mot de passe changé sur leboncoin se vérifie auprès du site : jusqu'à deux minutes.
+        signal: AbortSignal.timeout(150_000),
       });
 
       if (response.ok) {

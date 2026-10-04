@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { env } from '@/lib/env';
 import { createSessionToken, setSessionCookie } from '@/lib/auth';
+import { clientIp, explainRefusal, verifyWithLeboncoin } from '@/lib/lbc-verify';
 import { checkRateLimit } from '@/lib/rate-limit';
 import { createUser, findUserByEmail, setLbcSession } from '@/lib/users';
 
@@ -9,7 +9,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const schema = z.object({
-  email: z.string().email(),
+  email: z.string().trim().email(),
   password: z.string().min(1),
 });
 
@@ -21,7 +21,7 @@ const schema = z.object({
  * aboutit, et la session obtenue est conservée pour le premier relevé.
  */
 export async function POST(request: Request) {
-  const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
+  const ip = clientIp(request);
   const limit = checkRateLimit(`register:${ip}`);
   if (!limit.allowed) {
     return NextResponse.json(
@@ -43,16 +43,8 @@ export async function POST(request: Request) {
     );
   }
 
-  let verification: { outcome: string; detail?: string; storageState?: unknown };
-  try {
-    const response = await fetch(`${env.workerUrl}/verify-login`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-worker-token': env.workerToken },
-      body: JSON.stringify({ email, password }),
-      signal: AbortSignal.timeout(120_000),
-    });
-    verification = await response.json();
-  } catch {
+  const verification = await verifyWithLeboncoin(email, password);
+  if (!verification) {
     return NextResponse.json(
       { error: 'Le service de connexion est indisponible. Réessaie dans un instant.' },
       { status: 503 },
@@ -60,7 +52,7 @@ export async function POST(request: Request) {
   }
 
   if (verification.outcome !== 'ok') {
-    return NextResponse.json({ error: explain(verification.outcome) }, { status: 401 });
+    return NextResponse.json({ error: explainRefusal(verification.outcome) }, { status: 401 });
   }
 
   const user = await createUser(email, password);
@@ -70,17 +62,4 @@ export async function POST(request: Request) {
 
   await setSessionCookie(await createSessionToken(user.uid));
   return NextResponse.json({ ok: true });
-}
-
-function explain(outcome: string): string {
-  switch (outcome) {
-    case 'bad_credentials':
-      return 'leboncoin a refusé ces identifiants. Vérifie-les sur leboncoin.fr.';
-    case 'verification_required':
-      return 'leboncoin demande un code de vérification par e-mail. Connecte-toi une fois sur leboncoin.fr, puis réessaie.';
-    case 'blocked':
-      return 'leboncoin a opposé une vérification anti-robot. Réessaie dans quelques minutes.';
-    default:
-      return 'La connexion à leboncoin n’a pas abouti. Réessaie plus tard.';
-  }
 }

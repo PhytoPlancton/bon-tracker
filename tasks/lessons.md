@@ -147,6 +147,9 @@ Format : [date] | ce qui a mal tourné | règle pour l'éviter
 - [2026-10-04] | Le bouton « Supprimer » de l'app ouvrait une confirmation native. Ouverte dans le Chrome dédié et laissée sans réponse, ce genre de boîte fige l'onglet, et avec lui tout rattachement du collecteur. |
   Pas de boîte de dialogue native dans l'app : une action à confirmer se confirme d'un second appui.
 
+- [2026-10-04] | Un ami ne pouvait pas se connecter : « Identifiants incorrects » servait à la fois pour une adresse sans compte et pour un mot de passe qui n'était plus celui enregistré, et le limiteur, faute de lire l'adresse que donne Cloudflare, risquait de mettre tous les visiteurs dans le même compteur. |
+  Un refus dit sa cause, et propose le geste qui la lève. Derrière un mandataire, l'adresse du visiteur se lit dans l'en-tête qu'il pose, jamais par défaut.
+
 ## Règles permanentes du projet
 - Un seul client MongoDB, `maxPoolSize` bas : le quota de 500 connexions est
   partagé entre plusieurs applications.
