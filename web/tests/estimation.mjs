@@ -291,6 +291,42 @@ try {
   await call('DELETE', `/api/estimations/${orphan.id}`, alice);
   await call('DELETE', `/api/estimations/${newcomer.id}`, alice);
 
+  console.log('\nArrêt d’une collecte');
+  // En attente : annulée sur-le-champ, et l'envoi ne repart pas quand son tour vient.
+  const waiting = await call('POST', '/api/estimations', alice, { brand: 'Porsche', model: 'Cayenne', yearMin: 2003, yearMax: 2010 });
+  const waitingJob = jobs.find((job) => job.queryId === waiting.id);
+  check('chaque envoi porte sa marque', typeof waitingJob?.runId === 'string' && waitingJob.runId.length > 10, waitingJob);
+  await call('POST', `/api/estimations/${waiting.id}/stop`, alice, {});
+  const cancelled = await call('GET', `/api/estimations/${waiting.id}`, alice);
+  check('collecte en attente annulée', cancelled.estimation.status === 'error' && /annulée/.test(cancelled.estimation.error), cancelled.estimation);
+  const lateStart = await call('PATCH', `/api/internal/market/queries/${waiting.id}`, worker, { runId: waitingJob.runId, status: 'running', pages: 0, ads: 0 });
+  const stillCancelled = await call('GET', `/api/estimations/${waiting.id}`, alice);
+  check('son tour venu, le collecteur est prié de s’arrêter', lateStart.stop === true && stillCancelled.estimation.status === 'error', { lateStart, status: stillCancelled.estimation.status });
+
+  // Relancée aussitôt : l'ancien envoi, encore en file, est écarté au profit du nouveau.
+  await raw('POST', `/api/estimations/${waiting.id}`, alice, {});
+  const relaunchJob = jobs.filter((job) => job.queryId === waiting.id).at(-1);
+  check('la relance est un nouvel envoi', relaunchJob && relaunchJob.runId !== waitingJob.runId, relaunchJob);
+  const ghost = await call('PATCH', `/api/internal/market/queries/${waiting.id}`, worker, { runId: waitingJob.runId, status: 'running', pages: 0, ads: 0 });
+  const afterGhost = await call('GET', `/api/estimations/${waiting.id}`, alice);
+  check('l’envoi remplacé est écarté sans rien écrire', ghost.stop === true && afterGhost.estimation.status === 'queued', { ghost, status: afterGhost.estimation.status });
+  const real = await call('PATCH', `/api/internal/market/queries/${waiting.id}`, worker, { runId: relaunchJob.runId, status: 'running', pages: 0, ads: 0 });
+  check('le nouvel envoi travaille normalement', real.stop === false, real);
+
+  // En cours : l'arrêt est lu à la page suivante, et ce qui a été lu est gardé.
+  await call('POST', '/api/internal/market/ads', worker, { queryId: waiting.id, ads: ads.slice(0, 12) });
+  await call('POST', `/api/estimations/${waiting.id}/stop`, alice, {});
+  const stopping = await call('GET', `/api/estimations/${waiting.id}`, alice);
+  check('arrêt demandé visible', stopping.estimation.status === 'running' && stopping.estimation.stopRequested === true, stopping.estimation);
+  const nextPage = await call('PATCH', `/api/internal/market/queries/${waiting.id}`, worker, { runId: relaunchJob.runId, pages: 1, ads: 12 });
+  check('le collecteur l’apprend à la page suivante', nextPage.stop === true, nextPage);
+  await call('PATCH', `/api/internal/market/queries/${waiting.id}`, worker, { runId: relaunchJob.runId, status: 'done', pages: 1 });
+  const kept = await call('GET', `/api/estimations/${waiting.id}`, alice);
+  check('ce qui a été lu est gardé', kept.estimation.status === 'done' && kept.ads.length === 12 && !kept.estimation.stopRequested, { status: kept.estimation.status, ads: kept.ads.length, stop: kept.estimation.stopRequested });
+  const foreignStop = await raw('POST', `/api/estimations/${waiting.id}/stop`, bob, {});
+  check('bob n’arrête pas la collecte d’alice', foreignStop.status === 404, foreignStop.status);
+  await call('DELETE', `/api/estimations/${waiting.id}`, alice);
+
   console.log('\nRelance et suppression');
   const jobsBefore = jobs.length;
   const refreshed = await raw('POST', `/api/estimations/${created.id}`, alice, {});

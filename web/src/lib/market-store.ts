@@ -1,64 +1,31 @@
 import { randomUUID } from 'node:crypto';
+import { collectJobs, FRESH_FOR, MAX_ACTIVE } from './collect-jobs';
 import { collections } from './mongo';
-import { env } from './env';
 import { readSpecs, type Ad } from './estimation';
 import type { MarketActivity, MarketAd, MarketQuery, ScrapedListing } from './types';
 
-/** Une collecte de moins d'un jour est réutilisée plutôt que refaite. */
-const FRESH_FOR = 24 * 60 * 60 * 1000;
-
-/** Collectes simultanées par compte : chacune occupe le navigateur une à deux minutes. */
-const MAX_ACTIVE = 3;
-
-/**
- * Sans nouvelles du collecteur depuis ce délai, une collecte ne progresse
- * plus : collecteur redémarré, Chrome fermé. Une collecte dure quelques
- * minutes, mais peut attendre derrière un relevé complet de tous les comptes.
- */
-const STALE_AFTER = 20 * 60 * 1000;
+/** Envoi, avancement, arrêt et collectes mortes : le cycle commun à toutes les collectes. */
+const jobs = collectJobs<MarketQuery>({
+  collection: async () => (await collections()).marketQueries,
+  workerPath: '/market',
+  payload: (query) => ({
+    brand: query.brand,
+    model: query.model,
+    yearMin: query.yearMin,
+    yearMax: query.yearMax,
+    powerMin: query.powerMin ?? null,
+    powerMax: query.powerMax ?? null,
+    codes: query.codes,
+  }),
+});
 
 /** Collectes laissées en cours par un collecteur qui vient de redémarrer. */
-export async function abandonQueries(before: Date): Promise<number> {
-  const { marketQueries } = await collections();
-  const result = await marketQueries.updateMany(
-    {
-      status: { $in: ['queued', 'running'] },
-      $or: [
-        { updatedAt: { $lt: before } },
-        { updatedAt: { $exists: false }, createdAt: { $lt: before } },
-      ],
-    },
-    {
-      $set: {
-        status: 'error',
-        error: 'Le collecteur a redémarré pendant la collecte. Actualise pour la relancer.',
-        updatedAt: new Date(),
-      },
-    },
-  );
-  return result.modifiedCount;
-}
-
-/** Rend la main sur les collectes mortes, pour qu'on puisse les relancer. */
-async function settleStale(): Promise<void> {
-  const { marketQueries } = await collections();
-  const cutoff = new Date(Date.now() - STALE_AFTER);
-  await marketQueries.updateMany(
-    {
-      status: { $in: ['queued', 'running'] },
-      $or: [
-        { updatedAt: { $lt: cutoff } },
-        { updatedAt: { $exists: false }, createdAt: { $lt: cutoff } },
-      ],
-    },
-    {
-      $set: {
-        status: 'error',
-        error: 'Collecte interrompue sans nouvelles du collecteur. Vérifie que la fenêtre Chrome dédiée est ouverte, puis Actualise.',
-      },
-    },
-  );
-}
+export const abandonQueries = jobs.abandon;
+export const refreshQuery = jobs.refresh;
+export const stopQuery = jobs.stop;
+export const listQueries = jobs.list;
+export const getQuery = jobs.get;
+export const deleteQuery = jobs.remove;
 
 type QueryInput = {
   brand: string;
@@ -101,7 +68,7 @@ export async function createQuery(
   uid: string,
   input: QueryInput,
 ): Promise<CreateOutcome> {
-  await settleStale();
+  await jobs.settleStale();
   const { marketQueries } = await collections();
   const key = queryKey(input);
 
@@ -123,8 +90,7 @@ export async function createQuery(
     return { kind: 'reused', query };
   }
 
-  const active = await marketQueries.countDocuments({ uid, status: { $in: ['queued', 'running'] } });
-  if (active >= MAX_ACTIVE) return { kind: 'too_many' };
+  if ((await jobs.activeCount(uid)) >= MAX_ACTIVE) return { kind: 'too_many' };
 
   // Des codes déjà établis pour ce modèle évitent la recherche libre.
   const known = await marketQueries.findOne(
@@ -137,7 +103,7 @@ export async function createQuery(
     : buildQuery(uid, input, key, { codes: known?.codes ?? null });
 
   await marketQueries.updateOne({ id: query.id }, { $set: query }, { upsert: true });
-  await dispatch(query);
+  await jobs.dispatch(query);
   return { kind: mine ? 'existing' : 'created', query };
 }
 
@@ -175,97 +141,13 @@ function escape(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-/** Confie la collecte au collecteur, qui répond aussitôt et travaille ensuite. */
-export async function dispatch(query: MarketQuery): Promise<void> {
-  const { marketQueries } = await collections();
-  // Annuler puis relancer aussitôt laisse l'ancien envoi dans la file du
-  // collecteur : sans cette marque, il repartirait à côté du nouveau.
-  const runId = randomUUID();
-  await marketQueries.updateOne({ id: query.id }, { $set: { runId } });
-  try {
-    const response = await fetch(`${env.workerUrl}/market`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-worker-token': env.workerToken },
-      body: JSON.stringify({
-        queryId: query.id,
-        runId,
-        brand: query.brand,
-        model: query.model,
-        yearMin: query.yearMin,
-        yearMax: query.yearMax,
-        powerMin: query.powerMin ?? null,
-        powerMax: query.powerMax ?? null,
-        codes: query.codes,
-      }),
-      signal: AbortSignal.timeout(10_000),
-    });
-    if (!response.ok) throw new Error(`réponse ${response.status}`);
-  } catch (cause) {
-    await marketQueries.updateOne(
-      { id: query.id },
-      {
-        $set: {
-          status: 'error',
-          error: `Collecteur injoignable (${cause instanceof Error ? cause.message : String(cause)}). Vérifie qu'il tourne et que le Chrome dédié est ouvert.`,
-        },
-      },
-    );
-  }
-}
-
-export async function refreshQuery(uid: string, id: string): Promise<MarketQuery | null> {
-  await settleStale();
-  const { marketQueries } = await collections();
-  const query = await marketQueries.findOne({ uid, id }, { projection: { _id: 0 } });
-  if (!query) return null;
-  if (query.status === 'queued' || query.status === 'running') return query;
-
-  const next = { ...query, status: 'queued' as const, error: null, stopRequested: false };
-  await marketQueries.updateOne(
-    { id },
-    { $set: { status: 'queued', error: null, stopRequested: false, updatedAt: new Date() } },
-  );
-  await dispatch(next);
-  return next;
-}
-
-/**
- * Arrête une collecte. En attente, elle est annulée sur-le-champ ; en cours,
- * le collecteur le lit à la page suivante, garde ce qu'il a déjà lu et
- * s'arrête. Une collecte en attente n'a pas encore occupé le navigateur :
- * rien à garder.
- */
-export async function stopQuery(uid: string, id: string): Promise<MarketQuery | null> {
-  const { marketQueries } = await collections();
-  const query = await marketQueries.findOne({ uid, id }, { projection: { _id: 0 } });
-  if (!query) return null;
-
-  if (query.status === 'queued') {
-    await marketQueries.updateOne(
-      { id, status: 'queued' },
-      {
-        $set: {
-          status: 'error',
-          error: 'Collecte annulée avant d’avoir commencé.',
-          stopRequested: true,
-          activity: null,
-          updatedAt: new Date(),
-        },
-      },
-    );
-  } else if (query.status === 'running') {
-    await marketQueries.updateOne({ id, status: 'running' }, { $set: { stopRequested: true } });
-  }
-  return marketQueries.findOne({ uid, id }, { projection: { _id: 0 } });
-}
-
 // ---------------------------------------------------------------------------
 // Côté collecteur
 // ---------------------------------------------------------------------------
 
 /** Verse des annonces dans la base commune et les rattache à la collecte en cours. */
 export async function ingestMarketAds(queryId: string, scraped: ScrapedListing[]): Promise<number> {
-  const { marketAds, marketQueries } = await collections();
+  const { marketAds } = await collections();
   const now = new Date();
 
   const operations = scraped
@@ -296,10 +178,7 @@ export async function ingestMarketAds(queryId: string, scraped: ScrapedListing[]
     });
 
   if (operations.length) await marketAds.bulkWrite(operations as never, { ordered: false });
-  await marketQueries.updateOne(
-    { id: queryId },
-    { $addToSet: { pendingIds: { $each: scraped.map((ad) => ad.lbcId) } } },
-  );
+  await jobs.attach(queryId, scraped.map((ad) => ad.lbcId));
   return operations.length;
 }
 
@@ -315,79 +194,13 @@ export async function updateQueryProgress(
     activity?: MarketActivity;
   },
 ): Promise<{ found: boolean; stop: boolean }> {
-  const { marketQueries } = await collections();
-  const current = await marketQueries.findOne({ id }, { projection: { stopRequested: 1, runId: 1 } });
-  if (!current) return { found: false, stop: false };
-  const superseded = Boolean(patch.runId && current.runId && patch.runId !== current.runId);
-  // Un envoi remplacé ne doit plus rien écrire : la collecte appartient au nouveau.
-  if (superseded) return { found: true, stop: true };
-  const stop = current.stopRequested === true;
-  // Une collecte annulée en attente ne doit pas repartir quand son tour vient.
-  if (stop && patch.status === 'running') return { found: true, stop };
-
-  if (patch.status === 'done') {
-    // La collecte réussie remplace la précédente d'un bloc : jamais de
-    // mélange entre deux relevés.
-    const result = await marketQueries.updateOne({ id }, [
-      {
-        $set: {
-          status: 'done',
-          adIds: '$pendingIds',
-          ads: { $size: '$pendingIds' },
-          pendingIds: [],
-          collectedAt: '$$NOW',
-          updatedAt: '$$NOW',
-          activity: null,
-          error: null,
-          stopRequested: false,
-          ...(patch.pages !== undefined ? { pages: patch.pages } : {}),
-        },
-      },
-    ]);
-    return { found: result.matchedCount > 0, stop };
-  }
-
-  const set: Record<string, unknown> = { updatedAt: new Date() };
-  if (patch.status) set.status = patch.status;
-  if (patch.pages !== undefined) set.pages = patch.pages;
-  if (patch.ads !== undefined) set.ads = patch.ads;
-  if (patch.codes !== undefined) set.codes = patch.codes;
-  if (patch.activity !== undefined) set.activity = patch.activity;
-  if (patch.status === 'running') {
-    set.error = null;
-    if (patch.activity === undefined) set.activity = null;
-    // Seul le démarrage repart de zéro : une remontée d'avancement qui
-    // répéterait « en cours » ne doit pas perdre les annonces déjà reçues.
-    await marketQueries.updateOne({ id, status: { $ne: 'running' } }, { $set: { pendingIds: [] } });
-  }
-  // En cas d'échec, la dernière collecte réussie reste consultable.
-  if (patch.status === 'error') set.error = patch.error ?? 'Échec de la collecte';
-
-  if (patch.status === 'error') set.stopRequested = false;
-
-  const result = await marketQueries.updateOne({ id }, { $set: set });
-  return { found: result.matchedCount > 0, stop };
+  const { codes, ...rest } = patch;
+  return jobs.progress(id, { ...rest, learned: codes !== undefined ? { codes } : undefined });
 }
 
 // ---------------------------------------------------------------------------
 // Lecture
 // ---------------------------------------------------------------------------
-
-export async function listQueries(uid: string) {
-  await settleStale();
-  const { marketQueries } = await collections();
-  return marketQueries
-    .find({ uid }, { projection: { _id: 0, adIds: 0, pendingIds: 0 } })
-    .sort({ createdAt: -1 })
-    .limit(50)
-    .toArray();
-}
-
-export async function getQuery(uid: string, id: string) {
-  await settleStale();
-  const { marketQueries } = await collections();
-  return marketQueries.findOne({ uid, id }, { projection: { _id: 0, pendingIds: 0 } });
-}
 
 export async function loadAds(ids: string[]): Promise<Ad[]> {
   if (!ids.length) return [];
@@ -413,12 +226,6 @@ function toAd(doc: MarketAd): Ad {
     gearbox: doc.gearbox ?? null,
     fuel: doc.fuel ?? null,
   };
-}
-
-export async function deleteQuery(uid: string, id: string): Promise<boolean> {
-  const { marketQueries } = await collections();
-  const result = await marketQueries.deleteOne({ uid, id });
-  return result.deletedCount > 0;
 }
 
 /**

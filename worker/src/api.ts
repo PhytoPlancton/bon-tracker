@@ -115,34 +115,13 @@ export function reportRun(payload: {
   });
 }
 
-/** Ce que fait le collecteur, montré en direct dans l'application. */
-export interface MarketActivity {
-  step: string;
-  recent: {
-    title: string;
-    price: number;
-    km: number | null;
-    year: number | null;
-    imageUrl: string | null;
-    location: string | null;
-  }[];
-  total: number | null;
-}
-
-export interface MarketQueryPatch {
-  /** L'envoi que ce relevé sert : l'application écarte celui d'un envoi remplacé. */
-  runId?: string;
-  activity?: MarketActivity;
-  status?: 'running' | 'done' | 'error';
-  pages?: number;
-  ads?: number;
-  codes?: { brand: string; model: string } | null;
-  error?: string;
-}
-
-/** Avancement d'une collecte de marché, affiché en direct dans l'application. */
-export function updateMarketQuery(queryId: string, patch: MarketQueryPatch) {
-  // stop : arrêt demandé depuis l'application, ou collecte confiée à un envoi plus récent.
+/**
+ * Avancement d'une collecte de marché, affiché en direct dans l'application :
+ * statut, pages lues, activité, et ce que la collecte a appris (codes du
+ * modèle). Porte la marque de l'envoi servi : l'application écarte celui d'un
+ * envoi remplacé, et répond `stop` quand l'arrêt a été demandé.
+ */
+export function updateMarketQuery(queryId: string, patch: Record<string, unknown>) {
   return call<{ ok: boolean; stop?: boolean }>(`/api/internal/market/queries/${encodeURIComponent(queryId)}`, {
     method: 'PATCH',
     body: JSON.stringify(patch),

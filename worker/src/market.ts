@@ -1,7 +1,6 @@
-import type { Browser, Page } from 'playwright';
 import { LBC_ORIGIN } from './config.js';
-import { ingestMarketAds, updateMarketQuery, type MarketActivity, type ScrapedListing } from './api.js';
-import { connectToChrome, mainContext } from './browser.js';
+import { ingestMarketAds, updateMarketQuery, type ScrapedListing } from './api.js';
+import { pause, runCollection, type Recent } from './collect.js';
 import { collectListings } from './scrape.js';
 
 /** Ce qu'on cherche : un modèle, éventuellement une tranche d'années. */
@@ -20,18 +19,6 @@ export interface MarketSpec {
   codes: { brand: string; model: string } | null;
 }
 
-/** Au-delà, une recherche couvre déjà plusieurs centaines d'annonces. */
-const MAX_PAGES = 20;
-
-/**
- * Une page de résultats se lit en une demi-minute environ, pause comprise.
- * Sans nouvelle page depuis ce délai, la collecte est bloquée — page qui ne
- * répond plus, vérification anti-robot — et doit le dire plutôt que laisser
- * l'application attendre sans fin. Un plafond sur la durée totale coupait au
- * contraire une collecte longue mais saine : seize pages lues, rien gardé.
- */
-const STALL_TIMEOUT_MS = 3 * 60 * 1000;
-
 /**
  * Relève toutes les annonces d'un modèle.
  *
@@ -44,167 +31,47 @@ const STALL_TIMEOUT_MS = 3 * 60 * 1000;
  */
 export async function runMarketJob(spec: MarketSpec, log: (message: string) => void): Promise<void> {
   const label = `${spec.brand} ${spec.model}`.trim();
-  const start = await updateMarketQuery(spec.queryId, {
-    runId: spec.runId,
-    status: 'running',
-    pages: 0,
-    ads: 0,
-  });
-  // Annulée pendant qu'elle attendait son tour : rien à faire.
-  if (start.stop) {
-    log(`[marché] ${label} : annulée avant de commencer`);
-    return;
-  }
-
-  log(`[marché] ${label} : ouverture de la recherche`);
-  const say = (step: string, extra: Partial<MarketActivity> = {}) =>
-    updateMarketQuery(spec.queryId, {
-      runId: spec.runId,
-      activity: { step, recent: [], total: null, ...extra },
-    }).catch(() => undefined);
-  let total: number | null = null;
-  await say('Connexion au navigateur');
-
-  // Fermer l'onglet interrompt toute action en cours dessus : c'est le seul
-  // moyen sûr de débloquer une navigation qui ne rend jamais la main.
-  let browser: Browser | null = null;
-  let page: Page | null = null;
-  let timedOut = false;
-  let deadline: NodeJS.Timeout | undefined;
-  const watch = () => {
-    clearTimeout(deadline);
-    deadline = setTimeout(() => {
-      timedOut = true;
-      void page?.close().catch(() => undefined);
-    }, STALL_TIMEOUT_MS);
-  };
-  watch();
-
-  const all = new Map<string, ScrapedListing>();
   let codes = spec.codes;
-  let pagesRead = 0;
 
-  // La connexion au navigateur est dans le bloc surveillé : un Chrome fermé
-  // doit se lire comme un échec dans l'application, pas comme une collecte
-  // qui n'avance plus.
-  try {
-    browser = await connectToChrome(log);
-    page = await mainContext(browser).newPage();
+  await runCollection(
+    {
+      tag: `[marché] ${label}`,
+      report: (patch) => updateMarketQuery(spec.queryId, { runId: spec.runId, ...patch }),
 
-    await say(codes ? `Recherche des ${label} sur leboncoin` : `Recherche de « ${label} » sur leboncoin`);
-    let first = await collectListings(page, searchUrl(spec, codes, 1));
+      async open(page, say) {
+        await say(codes ? `Recherche des ${label} sur leboncoin` : `Recherche de « ${label} » sur leboncoin`);
+        let first = await collectListings(page, searchUrl(spec, codes, 1));
 
-    if (!codes) {
-      codes = resolveCodes(first, spec.model);
-      if (codes) {
-        log(`[marché] ${label} : codes du site ${codes.brand} / ${codes.model}`);
-        await say(`Modèle identifié chez leboncoin : on relance une recherche précise`, {
-          recent: preview(first),
-        });
-        await pause();
-        first = await collectListings(page, searchUrl(spec, codes, 1));
-      } else {
-        log(`[marché] ${label} : codes introuvables, recherche libre`);
-      }
-    }
-    total = await readTotal(page, first.length);
+        if (!codes) {
+          codes = resolveCodes(first, spec.model);
+          if (codes) {
+            log(`[marché] ${label} : codes du site ${codes.brand} / ${codes.model}`);
+            await say(`Modèle identifié chez leboncoin : on relance une recherche précise`, {
+              recent: preview(first),
+            });
+            await pause();
+            first = await collectListings(page, searchUrl(spec, codes, 1));
+          } else {
+            log(`[marché] ${label} : codes introuvables, recherche libre`);
+          }
+        }
+        return { ads: first, learned: { codes } };
+      },
 
-    add(all, first);
-    pagesRead = 1;
-    watch();
-    const firstReport = await updateMarketQuery(spec.queryId, {
-      runId: spec.runId,
-      pages: 1,
-      ads: all.size,
-      codes,
-      activity: { step: `Page 1 lue · ${first.length} annonces`, recent: preview(first), total },
-    });
-    if (firstReport.stop) throw new StopRequested();
+      pageUrl: (number) => searchUrl(spec, codes, number),
+      preview,
 
-    for (let number = 2; number <= MAX_PAGES; number += 1) {
-      await pause();
-      const before = all.size;
-      const found = await collectListings(page, searchUrl(spec, codes, number));
-      const fresh = found.filter((ad) => !all.has(ad.lbcId));
-      add(all, found);
-      pagesRead = number;
-      watch();
-      const gained = all.size - before;
-      log(`[marché] ${label} : page ${number}, ${gained} nouvelles (${all.size} au total)`);
-      const report = await updateMarketQuery(spec.queryId, {
-        runId: spec.runId,
-        pages: number,
-        ads: all.size,
-        activity: {
-          step: gained ? `Page ${number} lue · ${gained} nouvelles annonces` : `Page ${number} : plus rien de neuf`,
-          recent: preview(fresh),
-          total,
-        },
-      });
-      if (report.stop) throw new StopRequested();
-      // Une page sans rien de neuf : on a fait le tour.
-      if (gained === 0) break;
-    }
-
-    await keep(all, spec, codes, label, total, log);
-  } catch (cause) {
-    if (cause instanceof StopRequested) {
-      log(`[marché] ${label} : arrêtée à la demande après ${pagesRead} page(s)`);
-      await keep(all, spec, codes, label, total, log).catch(() => undefined);
-      return;
-    }
-    // Des centaines d'annonces déjà lues valent mieux qu'un échec : on garde
-    // ce qui a été vu avant le blocage.
-    if (timedOut && all.size) {
-      log(`[marché] ${label} : bloqué après ${pagesRead} page(s), on garde ce qui a été lu`);
-      const saved = await keep(all, spec, codes, label, total, log).then(
-        () => true,
-        () => false,
-      );
-      if (saved) return;
-    }
-    const message = timedOut
-      ? `Aucune page lue en ${STALL_TIMEOUT_MS / 60_000} minutes. Vérifie la fenêtre Chrome dédiée (vérification anti-robot ?) puis relance.`
-      : cause instanceof Error
-        ? cause.message
-        : String(cause);
-    log(`[marché] ${label} : échec — ${message}`);
-    await updateMarketQuery(spec.queryId, {
-      runId: spec.runId,
-      status: 'error',
-      error: message.slice(0, 500),
-    }).catch(
-      () => undefined,
-    );
-  } finally {
-    clearTimeout(deadline);
-    await page?.close().catch(() => undefined);
-    await browser?.close().catch(() => undefined);
-  }
-}
-
-/** L'application a demandé l'arrêt : on garde ce qui a été lu. */
-class StopRequested extends Error {}
-
-/** Trie les annonces lues, les verse dans la base et clôt la collecte. */
-async function keep(
-  all: Map<string, ScrapedListing>,
-  spec: MarketSpec,
-  codes: { brand: string; model: string } | null,
-  label: string,
-  total: number | null,
-  log: (message: string) => void,
-): Promise<void> {
-  const kept = [...all.values()].filter((ad) => belongs(ad, spec, codes));
-  await updateMarketQuery(spec.queryId, {
-    runId: spec.runId,
-    activity: { step: `Tri de ${all.size} annonces : ${kept.length} sont bien des ${label}`, recent: [], total },
-  }).catch(() => undefined);
-  for (let i = 0; i < kept.length; i += 200) {
-    await ingestMarketAds(spec.queryId, kept.slice(i, i + 200));
-  }
-  await updateMarketQuery(spec.queryId, { runId: spec.runId, status: 'done', ads: kept.length });
-  log(`[marché] ${label} : ${kept.length} annonces retenues sur ${all.size} vues`);
+      async keep(ads, say) {
+        const kept = ads.filter((ad) => belongs(ad, spec, codes));
+        await say(`Tri de ${ads.length} annonces : ${kept.length} sont bien des ${label}`);
+        for (let i = 0; i < kept.length; i += 200) {
+          await ingestMarketAds(spec.queryId, kept.slice(i, i + 200));
+        }
+        return kept.length;
+      },
+    },
+    log,
+  );
 }
 
 function searchUrl(
@@ -290,7 +157,7 @@ function withinPower(ad: ScrapedListing, spec: MarketSpec): boolean {
  * Ce que l'application montre pendant la collecte : les dernières annonces
  * lues, pour qu'on voie le travail avancer plutôt qu'un compteur.
  */
-function preview(ads: ScrapedListing[]): MarketActivity['recent'] {
+function preview(ads: ScrapedListing[]): Recent[] {
   return ads
     .filter((ad) => ad.price !== null)
     .slice(0, 8)
@@ -309,27 +176,6 @@ function wholeNumber(value?: string): number | null {
   return digits ? Number(digits) : null;
 }
 
-/**
- * Nombre d'annonces annoncé par la page de résultats, pour situer
- * l'avancement. Lecture approximative : écartée si elle contredit ce qu'on
- * voit déjà sur la première page.
- */
-async function readTotal(page: Page, firstPage: number): Promise<number | null> {
-  const text = await page
-    .evaluate(() => {
-      const heading = document.querySelector('h1, h2');
-      return `${heading?.textContent ?? ''}\n${document.body.innerText.slice(0, 4000)}`;
-    })
-    .catch(() => '');
-  const match = text.match(/(\d[\d\s\u202f\u00a0.]{0,8})\s+annonces?\b/i);
-  const total = match ? Number(match[1].replace(/[^\d]/g, '')) : NaN;
-  return Number.isFinite(total) && total >= firstPage && total < 100_000 ? total : null;
-}
-
-function add(target: Map<string, ScrapedListing>, ads: ScrapedListing[]): void {
-  for (const ad of ads) target.set(ad.lbcId, ad);
-}
-
 function normalize(text: string): string {
   return text
     .normalize('NFD')
@@ -337,10 +183,5 @@ function normalize(text: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, ' ')
     .trim();
-}
-
-/** Une pause irrégulière entre deux pages, comme le ferait quelqu'un qui lit. */
-function pause(): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, 3000 + Math.random() * 3000));
 }
 
