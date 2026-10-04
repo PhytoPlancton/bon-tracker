@@ -21,6 +21,18 @@ const WORKER_PREFIX = '/api/internal';
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
+  // Ouverte en http:// par le tunnel, l'app refuse la connexion sans le dire :
+  // le cookie de session, réservé au https, est jeté par le navigateur, qui
+  // revient alors sur l'écran de connexion. Cloudflare signale le protocole
+  // d'origine ; un accès local, sans cet en-tête, n'est pas touché.
+  if (request.headers.get('cf-visitor')?.includes('"http"')) {
+    const secure = request.nextUrl.clone();
+    secure.protocol = 'https:';
+    secure.port = '';
+    secure.host = request.headers.get('host') ?? secure.host;
+    return NextResponse.redirect(secure, 308);
+  }
+
   if (pathname.startsWith(WORKER_PREFIX)) return NextResponse.next();
   if (PUBLIC_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`))) {
     return NextResponse.next();

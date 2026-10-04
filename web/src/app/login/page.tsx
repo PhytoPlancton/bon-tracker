@@ -1,7 +1,7 @@
 'use client';
 
 import { Suspense, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 
 export default function LoginPage() {
   return (
@@ -12,7 +12,6 @@ export default function LoginPage() {
 }
 
 function LoginForm() {
-  const router = useRouter();
   const params = useSearchParams();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -24,20 +23,26 @@ function LoginForm() {
     setPending(true);
     setError(null);
 
-    const response = await fetch('/api/auth/login', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ email, password }),
-    });
+    try {
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+        signal: AbortSignal.timeout(20_000),
+      });
 
-    if (response.ok) {
-      router.replace(params.get('next') || '/');
-      router.refresh();
-      return;
+      if (response.ok) {
+        // Navigation complète : si la session n'a pas pris, l'écran de
+        // connexion revient vierge au lieu de rester sur « Connexion… ».
+        window.location.assign(params.get('next') || '/');
+        return;
+      }
+
+      const body = await response.json().catch(() => ({}));
+      setError(body.error ?? 'Connexion impossible');
+    } catch {
+      setError('Le serveur ne répond pas. Vérifie que le PC est allumé, puis réessaie.');
     }
-
-    const body = await response.json().catch(() => ({}));
-    setError(body.error ?? 'Connexion impossible');
     setPending(false);
   }
 
