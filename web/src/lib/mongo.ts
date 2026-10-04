@@ -1,5 +1,6 @@
 import { MongoClient, type Collection, type Db } from 'mongodb';
 import { env } from './env';
+import type { ImmoAd, ImmoQuery } from './immo/types';
 import type { Listing, MarketAd, MarketQuery, PricePoint, Run, SavedSearch, User } from './types';
 
 /**
@@ -68,6 +69,13 @@ async function ensureIndexes(db: Db): Promise<void> {
     ['market_queries', 'market_queries', { id: 1 }, { unique: true }],
     ['market_queries', 'market_queries', { uid: 1, createdAt: -1 }, {}],
     ['market_queries', 'market_queries', { key: 1, collectedAt: -1 }, {}],
+    // L'immobilier vit à part : ses collectes et ses biens ne croisent jamais
+    // ceux des voitures.
+    ['immo_ads', 'immo_ads', { lbcId: 1 }, { unique: true }],
+    ['immo_queries', 'immo_queries', { id: 1 }, { unique: true }],
+    ['immo_queries', 'immo_queries', { uid: 1, createdAt: -1 }, {}],
+    ['immo_queries', 'immo_queries', { key: 1, collectedAt: -1 }, {}],
+    ['immo_queries', 'immo_queries', { 'place.code': 1, radiusKm: 1 }, {}],
   ];
 
   for (const [, collection, keys, options] of wanted) {
@@ -105,5 +113,7 @@ export async function collections() {
     runs: db.collection<Run>('runs') as Collection<Run>,
     marketAds: db.collection<MarketAd>('market_ads') as Collection<MarketAd>,
     marketQueries: db.collection<MarketQuery>('market_queries') as Collection<MarketQuery>,
+    immoAds: db.collection<ImmoAd>('immo_ads') as Collection<ImmoAd>,
+    immoQueries: db.collection<ImmoQuery>('immo_queries') as Collection<ImmoQuery>,
   };
 }

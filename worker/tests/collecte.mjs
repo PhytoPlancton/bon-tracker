@@ -68,6 +68,77 @@ for (let i = 0; i < 6; i += 1) {
   }));
 }
 
+// ---------------------------------------------------------------------------
+// Le marché immobilier
+// ---------------------------------------------------------------------------
+
+const NANTES = { name: 'Nantes', code: '44109', postalCodes: ['44000', '44100', '44200', '44300'], department: '44', lat: 47.2184, lng: -1.5534 };
+const CITIES = {
+  Nantes: { zip: '44000', lat: 47.2184, lng: -1.5534 },
+  'Saint-Herblain': { zip: '44800', lat: 47.2122, lng: -1.6497 },
+  Rennes: { zip: '35000', lat: 48.1113, lng: -1.68 },
+  Paris: { zip: '75011', lat: 48.8591, lng: 2.3795 },
+  Lyon: { zip: '69003', lat: 45.7597, lng: 4.8422 },
+  Lille: { zip: '59000', lat: 50.6292, lng: 3.0573 },
+};
+
+let homeId = 0;
+function home(city, { surface, type = '2', title, typed = true }) {
+  homeId += 1;
+  const at = CITIES[city];
+  return siteAd({
+    id: 4_000_000_000 + homeId,
+    title: title ?? `${type === '1' ? 'Maison' : 'Appartement'} ${Math.max(1, Math.round(surface / 20))} pièces ${surface} m²`,
+    price: surface * 3500,
+    category: 'Ventes immobilières',
+    slug: 'ventes_immobilieres',
+    city,
+    zipcode: at.zip,
+    lat: at.lat + (homeId % 7) * 0.001,
+    lng: at.lng - (homeId % 5) * 0.001,
+    attributes: { ...(typed ? { real_estate_type: type } : {}), square: surface, rooms: Math.max(1, Math.round(surface / 20)) },
+    body: 'Lumineux, proche commerces.',
+  });
+}
+
+// Un pays entier en vrac : sans lieu compris, c'est ce que le site renvoie,
+// et Nantes n'y pèse qu'une petite part.
+const homes = [];
+for (let i = 0; i < 40; i += 1) {
+  for (const city of ['Rennes', 'Paris', 'Lyon', 'Lille']) homes.push(home(city, { surface: 30 + i }));
+  homes.push(home('Nantes', { surface: 25 + i * 1.5 }));
+  if (i % 4 === 0) homes.push(home('Saint-Herblain', { surface: 35 + i }));
+}
+homes.push(home('Nantes', { surface: 90, type: '1' }), home('Nantes', { surface: 120, type: '1' }));
+// Sans type déclaré : seul le titre dit que c'est une maison.
+homes.push(home('Nantes', { surface: 60, typed: false, title: 'Maison de ville 3 pièces 60 m²' }));
+
+/** Ce que le site comprend du lieu ; le reste, il l'ignore et renvoie tout. */
+let understands = 'coords3';
+function selectHomes(params) {
+  if (params.get('category') !== '9') return [];
+  const type = params.get('real_estate_type');
+  // Le site filtre le type déclaré, ignore la surface : au collecteur de trier.
+  let pool = homes.filter((ad) => {
+    const declared = ad.attributes.find((a) => a.key === 'real_estate_type')?.value;
+    return !declared || !type || declared === type;
+  });
+  const location = params.get('locations') ?? '';
+  const coords3 = location.match(/^([^_]+)__(-?[\d.]+)_(-?[\d.]+)_(\d+)$/);
+  const coords4 = location.match(/^([^_]+)_(\d{5})__(-?[\d.]+)_(-?[\d.]+)_(\d+)_(\d+)$/);
+  const near = (lat, lng, metres) =>
+    pool.filter((ad) => distanceKm(ad.location.lat, ad.location.lng, Number(lat), Number(lng)) * 1000 <= metres);
+  if (understands === 'coords3' && coords3) pool = near(coords3[2], coords3[3], Number(coords3[4]));
+  else if (understands === 'coords4' && coords4) pool = near(coords4[3], coords4[4], Number(coords4[6]));
+  return pool;
+}
+
+function distanceKm(lat1, lng1, lat2, lng2) {
+  const r = Math.PI / 180;
+  const a = Math.sin(((lat2 - lat1) * r) / 2) ** 2 + Math.cos(lat1 * r) * Math.cos(lat2 * r) * Math.sin(((lng2 - lng1) * r) / 2) ** 2;
+  return 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
 function selectCars(params) {
   if (params.get('category') !== '2') return [];
   const model = params.get('u_car_model');
@@ -127,6 +198,65 @@ try {
   );
   check('aucune page visitée', site.visits.length === 0, site.visits.length);
   check('rien versé, rien écrit après le refus', api.state.ingested.length === 0 && api.state.reports.length === 1, api.state.reports);
+
+  const { runImmoJob } = await import('../dist/immo.js');
+  select = selectHomes;
+  const flats = { queryId: 'q-immo', runId: 'envoi-4', transaction: 'vente', propertyType: 'appartement', place: NANTES, radiusKm: 0, surfaceMin: 29, surfaceMax: 68, locationParam: null };
+  const zipOf = (ad) => ad.location?.match(/\d{5}/)?.[0];
+
+  console.log('\nImmobilier : le collecteur trouve la forme du lieu que le site comprend');
+  api.reset();
+  site.visits.length = 0;
+  understands = 'coords3';
+  await runImmoJob(flats, quiet);
+  const firstPages = site.visits.filter((u) => !u.searchParams.get('page'));
+  check('plusieurs formes essayées avant la bonne', firstPages.length === 3, firstPages.map((u) => u.searchParams.get('locations')));
+  check('d’abord le nom et le code postal', firstPages[0]?.searchParams.get('locations') === 'Nantes_44000', firstPages[0]?.searchParams.get('locations'));
+  const learnedPlace = api.state.reports.find((r) => r.pages === 1)?.locationParam;
+  check('forme comprise remontée à l’application', learnedPlace === 'Nantes__47.21840_-1.55340_5000', learnedPlace);
+  check('les pages suivantes la reprennent', site.visits.filter((u) => u.searchParams.get('page')).every((u) => u.searchParams.get('locations') === learnedPlace), site.visits.map(String));
+  check('recherche bien formée', firstPages[0]?.searchParams.get('category') === '9' && firstPages[0]?.searchParams.get('real_estate_type') === '2' && firstPages[0]?.searchParams.get('square') === '29-68', String(firstPages[0]));
+  const flatsKept = api.state.ingested;
+  check('seuls les biens de Nantes versés', flatsKept.length > 0 && flatsKept.every((ad) => NANTES.postalCodes.includes(zipOf(ad))), flatsKept.map(zipOf));
+  check('les maisons écartées, même sans type déclaré', !flatsKept.some((ad) => /maison/i.test(ad.title)), flatsKept.filter((ad) => /maison/i.test(ad.title)).map((ad) => ad.title));
+  check('la surface revérifiée', flatsKept.every((ad) => Number(ad.attributes.square) >= 27 && Number(ad.attributes.square) <= 72), flatsKept.map((ad) => ad.attributes.square));
+  const expected = homes.filter((ad) => ad.location.city === 'Nantes' && ad.subject.startsWith('Appartement') && Number(ad.attributes.find((a) => a.key === 'square').value) >= 27.55 && Number(ad.attributes.find((a) => a.key === 'square').value) <= 71.4);
+  check('et aucun bien de Nantes perdu', flatsKept.length === expected.length, { kept: flatsKept.length, expected: expected.length });
+  check('coordonnées et description relevées', flatsKept.every((ad) => typeof ad.lat === 'number' && typeof ad.lng === 'number' && ad.body === 'Lumineux, proche commerces.'), flatsKept[0]);
+  check('aperçu avec surface et pièces', api.state.reports.some((r) => r.activity?.recent?.[0]?.surface > 0 && r.activity.recent[0].rooms > 0), api.state.reports.find((r) => r.activity?.recent?.length)?.activity);
+  check('terminée', api.state.reports.at(-1)?.status === 'done' && api.state.reports.at(-1)?.ads === flatsKept.length, api.state.reports.at(-1));
+
+  console.log('\nImmobilier : forme déjà connue');
+  api.reset();
+  site.visits.length = 0;
+  await runImmoJob({ ...flats, queryId: 'q-immo-2', locationParam: learnedPlace }, quiet);
+  const direct = site.visits.filter((u) => !u.searchParams.get('page'));
+  check('une seule première page, avec la forme apprise', direct.length === 1 && direct[0].searchParams.get('locations') === learnedPlace, direct.map((u) => u.searchParams.get('locations')));
+  check('mêmes biens', api.state.ingested.length === flatsKept.length, api.state.ingested.length);
+
+  console.log('\nImmobilier : dans un rayon');
+  api.reset();
+  site.visits.length = 0;
+  understands = 'coords4';
+  await runImmoJob({ ...flats, queryId: 'q-rayon', radiusKm: 10 }, quiet);
+  const radiusTries = site.visits.filter((u) => !u.searchParams.get('page')).map((u) => u.searchParams.get('locations'));
+  check('le rayon se dit d’abord par le centre', radiusTries.every((form) => form.includes('__47.21840_-1.55340_')), radiusTries);
+  const radiusLearned = api.state.reports.find((r) => r.pages === 1)?.locationParam;
+  check('jusqu’à la forme comprise', radiusLearned === 'Nantes_44000__47.21840_-1.55340_5000_10000', radiusLearned);
+  const around = api.state.ingested;
+  check('les communes voisines comprises', around.some((ad) => zipOf(ad) === '44800') && around.some((ad) => zipOf(ad) === '44000'), [...new Set(around.map(zipOf))]);
+  check('rien de lointain', !around.some((ad) => ['35000', '75011', '69003', '59000'].includes(zipOf(ad))), [...new Set(around.map(zipOf))]);
+
+  console.log('\nImmobilier : un lieu que le site ne comprend pas');
+  api.reset();
+  site.visits.length = 0;
+  understands = 'rien';
+  const brest = { name: 'Brest', code: '29019', postalCodes: ['29200'], department: '29', lat: 48.39, lng: -4.49 };
+  await runImmoJob({ ...flats, queryId: 'q-brest', place: brest }, quiet);
+  const failure = api.state.reports.at(-1);
+  check('échec dit plutôt qu’un marché faux', failure?.status === 'error' && /ne reconnaît pas ce lieu/.test(failure.error), failure);
+  check('toutes les formes essayées', site.visits.length === 6, site.visits.map((u) => u.searchParams.get('locations')));
+  check('rien versé', api.state.ingested.length === 0, api.state.ingested.length);
 } finally {
   api.close();
   chromium.close();

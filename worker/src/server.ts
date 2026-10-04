@@ -4,6 +4,7 @@ import { config } from './config.js';
 import { isRunning, log, runOnce } from './run.js';
 import { connectToChrome } from './browser.js';
 import { loginToLeboncoin } from './login.js';
+import { runImmoJob, type ImmoSpec } from './immo.js';
 import { runMarketJob } from './market.js';
 import { exclusive } from './queue.js';
 
@@ -68,6 +69,21 @@ export function startCommandServer(): void {
         .catch(() => reply(400, { error: 'Requête illisible' }));
     }
 
+    if (request.method === 'POST' && request.url === '/immo') {
+      return readJson(request)
+        .then((body) => {
+          const spec = immoSpec(body);
+          if (!spec) return reply(400, { error: 'Demande incomplète' });
+          // Comme pour une cote : on répond tout de suite, l'application suit
+          // l'avancement de son côté.
+          reply(202, { queued: true });
+          void exclusive(() => runImmoJob(spec, log)).catch((cause) =>
+            log(`[immo] échec inattendu : ${String(cause)}`),
+          );
+        })
+        .catch(() => reply(400, { error: 'Requête illisible' }));
+    }
+
     if (request.method === 'POST' && request.url === '/verify-login') {
       return readJson(request)
         .then(async (body) => {
@@ -96,6 +112,37 @@ export function startCommandServer(): void {
   server.listen(config.commandPort, '0.0.0.0', () => {
     log(`Serveur de commandes à l’écoute sur le port ${config.commandPort}`);
   });
+}
+
+/** Relit une demande d'estimation immobilière ; null si un élément manque. */
+function immoSpec(body: Record<string, unknown>): ImmoSpec | null {
+  const place = body.place as Record<string, unknown> | undefined;
+  const text = (value: unknown) => (typeof value === 'string' && value.trim() ? value.trim() : null);
+  const size = (value: unknown) => (typeof value === 'number' && value > 0 && value < 100_000 ? value : null);
+  const coordinate = (value: unknown) => (typeof value === 'number' && Number.isFinite(value) ? value : null);
+
+  const queryId = text(body.queryId);
+  const name = text(place?.name);
+  const code = text(place?.code);
+  const department = text(place?.department);
+  const postalCodes = Array.isArray(place?.postalCodes)
+    ? (place.postalCodes as unknown[]).filter((value): value is string => typeof value === 'string' && /^\d{5}$/.test(value))
+    : [];
+  if (!queryId || !name || !code || !department || !postalCodes.length) return null;
+  if (body.transaction !== 'vente' && body.transaction !== 'location') return null;
+  if (body.propertyType !== 'appartement' && body.propertyType !== 'maison') return null;
+
+  return {
+    queryId,
+    runId: text(body.runId) ?? undefined,
+    transaction: body.transaction,
+    propertyType: body.propertyType,
+    place: { name, code, postalCodes, department, lat: coordinate(place?.lat), lng: coordinate(place?.lng) },
+    radiusKm: typeof body.radiusKm === 'number' && body.radiusKm >= 0 && body.radiusKm <= 50 ? body.radiusKm : 0,
+    surfaceMin: size(body.surfaceMin),
+    surfaceMax: size(body.surfaceMax),
+    locationParam: text(body.locationParam),
+  };
 }
 
 function authorized(header: string | string[] | undefined): boolean {

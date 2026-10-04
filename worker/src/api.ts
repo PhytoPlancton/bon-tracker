@@ -11,10 +11,19 @@ export interface ScrapedListing {
   price: number | null;
   /**
    * Caractéristiques telles que le site les publie : puissance, année,
-   * kilométrage, boîte. Relevées sans présumer lesquelles existent — c'est
-   * la seule base fiable pour comparer deux voitures entre elles.
+   * kilométrage, boîte, surface, pièces, DPE. Relevées sans présumer
+   * lesquelles existent — c'est la seule base fiable pour comparer deux
+   * annonces entre elles.
    */
   attributes?: Record<string, string>;
+  /** Position de l'annonce, pour vérifier qu'un bien est bien dans le rayon demandé. */
+  lat?: number | null;
+  lng?: number | null;
+  /**
+   * Début de la description : un viager ou une vente aux enchères ne se
+   * lisent souvent que là.
+   */
+  body?: string | null;
 }
 
 export interface TrackedSearch {
@@ -81,8 +90,16 @@ export function reportLbcStatus(
 export function ingest(uid: string, source: string, listings: ScrapedListing[]) {
   return call<RunStats>('/api/internal/ingest', {
     method: 'POST',
-    body: JSON.stringify({ uid, source, listings }),
+    body: JSON.stringify({ uid, source, listings: listings.map(withoutBody) }),
   });
+}
+
+/**
+ * La description ne sert qu'au marché immobilier, qui y lit viagers et
+ * enchères : ailleurs, elle alourdirait l'envoi pour rien.
+ */
+function withoutBody({ body: _body, ...listing }: ScrapedListing): ScrapedListing {
+  return listing;
 }
 
 export function fetchTrackedSearches(uid: string) {
@@ -128,11 +145,27 @@ export function updateMarketQuery(queryId: string, patch: Record<string, unknown
   });
 }
 
+/** Avancement d'une collecte immobilière, sur le modèle de celle des voitures. */
+export function updateImmoQuery(queryId: string, patch: Record<string, unknown>) {
+  return call<{ ok: boolean; stop?: boolean }>(`/api/internal/immo/queries/${encodeURIComponent(queryId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  });
+}
+
+/** Les biens d'un marché, versés dans la base immobilière commune à tous les comptes. */
+export function ingestImmoAds(queryId: string, ads: ScrapedListing[]) {
+  return call<{ ok: boolean }>('/api/internal/immo/ads', {
+    method: 'POST',
+    body: JSON.stringify({ queryId, ads }),
+  });
+}
+
 /** Les annonces d'un modèle, versées dans la base commune à tous les comptes. */
 export function ingestMarketAds(queryId: string, ads: ScrapedListing[]) {
   return call<{ ok: boolean }>('/api/internal/market/ads', {
     method: 'POST',
-    body: JSON.stringify({ queryId, ads }),
+    body: JSON.stringify({ queryId, ads: ads.map(withoutBody) }),
   });
 }
 

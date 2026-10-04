@@ -77,6 +77,9 @@ function merge(a: ScrapedListing | undefined, b: ScrapedListing): ScrapedListing
     category: a.category ?? b.category,
     sellerType: a.sellerType ?? b.sellerType,
     location: a.location ?? b.location,
+    lat: a.lat ?? b.lat,
+    lng: a.lng ?? b.lng,
+    body: a.body ?? b.body,
     attributes:
       a.attributes || b.attributes ? { ...(b.attributes ?? {}), ...(a.attributes ?? {}) } : undefined,
   };
@@ -214,6 +217,8 @@ function harvest(node: unknown, accumulator: ScrapedListing[] = []): ScrapedList
         category: typeof record.category_name === 'string' ? record.category_name : null,
         sellerType: extractSellerType(record),
         location: extractLocation(record),
+        ...extractCoordinates(record),
+        body: typeof record.body === 'string' ? record.body.slice(0, 1500) : null,
         attributes: extractAttributes(record),
       });
     }
@@ -313,6 +318,16 @@ function extractLocation(record: Record<string, unknown>): string | null {
     (part): part is string => typeof part === 'string',
   );
   return parts.length ? parts.join(' ') : null;
+}
+
+/** Position publiée avec l'annonce : le centre de sa commune, le plus souvent. */
+function extractCoordinates(record: Record<string, unknown>): { lat: number | null; lng: number | null } {
+  const location = record.location as Record<string, unknown> | undefined;
+  const lat = Number(location?.lat);
+  const lng = Number(location?.lng);
+  return Number.isFinite(lat) && Number.isFinite(lng) && (lat !== 0 || lng !== 0)
+    ? { lat, lng }
+    : { lat: null, lng: null };
 }
 
 function absolute(url: string): string {
