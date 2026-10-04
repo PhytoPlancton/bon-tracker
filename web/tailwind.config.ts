@@ -10,9 +10,11 @@ export default {
           soft: '#14161a',
           line: '#23272e',
         },
+        // Variables plutôt que valeurs : l'accent change avec le mode (orange
+        // pour l'auto, bleu pour l'immo) sans toucher aux classes.
         accent: {
-          DEFAULT: '#ff6e14',
-          soft: '#ff8f45',
+          DEFAULT: 'rgb(var(--accent) / <alpha-value>)',
+          soft: 'rgb(var(--accent-soft) / <alpha-value>)',
         },
         up: '#ef4444',
         down: '#22c55e',

@@ -1,3 +1,5 @@
+import type { Mode } from './mode';
+
 export type ListingSource = 'favorites' | `search:${string}`;
 
 /** Secret chiffré au repos (AES-256-GCM). */
@@ -26,6 +28,8 @@ export interface User {
   lbcStatus: LbcStatus;
   lbcCheckedAt: Date | null;
   createdAt: Date;
+  /** Auto ou immo, choisi dans les réglages ; absent, c'est l'auto. */
+  mode?: Mode;
 }
 
 export interface Listing {

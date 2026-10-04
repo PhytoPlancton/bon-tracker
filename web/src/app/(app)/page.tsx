@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { ListingCard, type ListingCardData } from '@/components/listing-card';
+import { useMode } from '@/components/mode';
 import { useApi } from '@/lib/client';
 import { relativeTime } from '@/lib/format';
 
@@ -21,8 +22,9 @@ interface StatusResponse {
 }
 
 export default function DashboardPage() {
-  const { data, loading, reload } = useApi<ListingsResponse>('/api/listings');
-  const { data: searchData } = useApi<SearchesResponse>('/api/searches');
+  const mode = useMode();
+  const { data, loading, reload } = useApi<ListingsResponse>(`/api/listings?mode=${mode}`);
+  const { data: searchData } = useApi<SearchesResponse>(`/api/searches?mode=${mode}`);
   const { data: status } = useApi<StatusResponse>('/api/status');
 
   const [source, setSource] = useState<string>('all');
@@ -108,7 +110,7 @@ export default function DashboardPage() {
       {loading ? (
         <SkeletonList />
       ) : listings.length === 0 ? (
-        <EmptyState hasSession={status?.hasSession ?? false} />
+        <EmptyState hasSession={status?.hasSession ?? false} immo={mode === 'immo'} />
       ) : (
         <div className="space-y-2.5">
           {listings.map((listing) => (
@@ -178,14 +180,18 @@ function SkeletonList() {
   );
 }
 
-function EmptyState({ hasSession }: { hasSession: boolean }) {
+function EmptyState({ hasSession, immo }: { hasSession: boolean; immo: boolean }) {
   return (
     <div className="rounded-2xl border border-dashed border-ink-line px-5 py-10 text-center">
-      <p className="text-sm text-zinc-400">Aucune annonce suivie pour l’instant.</p>
+      <p className="text-sm text-zinc-400">
+        {immo ? 'Aucun bien suivi pour l’instant.' : 'Aucune annonce suivie pour l’instant.'}
+      </p>
       <p className="mt-2 text-xs text-zinc-600">
-        {hasSession
-          ? 'Le prochain relevé récupérera tes favoris leboncoin.'
-          : 'Connecte d’abord le compte leboncoin depuis les réglages.'}
+        {!hasSession
+          ? 'Connecte d’abord le compte leboncoin depuis les réglages.'
+          : immo
+            ? 'Mets une maison ou un appartement en favori sur leboncoin, ou suis une recherche immobilière : le prochain relevé suivra son prix.'
+            : 'Le prochain relevé récupérera tes favoris leboncoin.'}
       </p>
     </div>
   );

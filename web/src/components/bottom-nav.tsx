@@ -2,21 +2,32 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { HouseIcon, useMode } from './mode';
 
-const TABS = [
-  { href: '/', label: 'Suivi', icon: ChartIcon },
-  { href: '/marche', label: 'Marché', icon: MarketIcon },
-  { href: '/recherches', label: 'Recherches', icon: SearchIcon },
-  { href: '/reglages', label: 'Réglages', icon: GearIcon },
-];
+/** Mêmes onglets dans les deux modes ; seul le marché change de domaine. */
+const TABS = {
+  auto: [
+    { href: '/', label: 'Suivi', icon: ChartIcon },
+    { href: '/marche', label: 'Marché', icon: MarketIcon },
+    { href: '/recherches', label: 'Recherches', icon: SearchIcon },
+    { href: '/reglages', label: 'Réglages', icon: GearIcon },
+  ],
+  immo: [
+    { href: '/', label: 'Suivi', icon: ChartIcon },
+    { href: '/immo', label: 'Marché', icon: HomeTabIcon },
+    { href: '/recherches', label: 'Recherches', icon: SearchIcon },
+    { href: '/reglages', label: 'Réglages', icon: GearIcon },
+  ],
+};
 
 export function BottomNav() {
   const pathname = usePathname();
+  const mode = useMode();
 
   return (
     <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-ink-line bg-ink/90 backdrop-blur-xl">
       <div className="mx-auto flex max-w-2xl items-stretch justify-around px-2 pt-2 pb-safe">
-        {TABS.map(({ href, label, icon: Icon }) => {
+        {TABS[mode].map(({ href, label, icon: Icon }) => {
           const active = href === '/' ? pathname === '/' : pathname.startsWith(href);
           return (
             <Link
@@ -57,6 +68,10 @@ function MarketIcon({ active }: { active: boolean }) {
       <circle cx="18.5" cy="10.5" r="1.9" fill="currentColor" stroke="none" />
     </svg>
   );
+}
+
+function HomeTabIcon({ active }: { active: boolean }) {
+  return <HouseIcon strokeWidth={active ? 2.2 : 1.8} />;
 }
 
 function SearchIcon({ active }: { active: boolean }) {

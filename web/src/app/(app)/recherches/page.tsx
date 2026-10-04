@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useMode } from '@/components/mode';
 import { useApi } from '@/lib/client';
 import { relativeTime } from '@/lib/format';
 
@@ -17,7 +18,8 @@ interface SearchesResponse {
 }
 
 export default function SearchesPage() {
-  const { data, loading, reload } = useApi<SearchesResponse>('/api/searches');
+  const mode = useMode();
+  const { data, loading, reload } = useApi<SearchesResponse>(`/api/searches?mode=${mode}`);
   const [pending, setPending] = useState<string | null>(null);
 
   async function toggle(id: string, tracked: boolean) {
@@ -38,7 +40,9 @@ export default function SearchesPage() {
       <header className="pb-4 pt-1">
         <h1 className="text-2xl font-semibold tracking-tight">Recherches</h1>
         <p className="text-xs text-zinc-500">
-          Active une recherche pour suivre le prix de toutes ses annonces.
+          {mode === 'immo'
+            ? 'Active une recherche immobilière pour suivre le prix de tous ses biens.'
+            : 'Active une recherche pour suivre le prix de toutes ses annonces.'}
         </p>
       </header>
 
@@ -50,7 +54,9 @@ export default function SearchesPage() {
         </div>
       ) : searches.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-ink-line px-5 py-10 text-center text-sm text-zinc-500">
-          Aucune recherche sauvegardée détectée. Elles apparaîtront après le prochain relevé.
+          {mode === 'immo'
+            ? 'Aucune recherche immobilière sauvegardée. Enregistre-en une sur leboncoin : elle apparaîtra ici après le prochain relevé.'
+            : 'Aucune recherche sauvegardée détectée. Elles apparaîtront après le prochain relevé.'}
         </div>
       ) : (
         <div className="space-y-2.5">

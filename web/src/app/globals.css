@@ -6,6 +6,16 @@
   color-scheme: dark;
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
+  /* Couleur d'accent en composantes, pour que Tailwind y applique une
+     opacité (bg-accent/10). Orange : Bon Tracker, les voitures. */
+  --accent: 255 110 20;
+  --accent-soft: 255 143 69;
+}
+
+/* Bleu : Bon Tracker Immo. Un coup d'œil suffit à savoir où l'on est. */
+[data-mode='immo'] {
+  --accent: 56 189 248;
+  --accent-soft: 125 211 252;
 }
 
 html,
