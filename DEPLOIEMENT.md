@@ -130,6 +130,30 @@ pile remonte d'elle-même après un redémarrage du PC.
 
 ---
 
+## Bon Tracker Immo
+
+Réglages → **Mode** → **Immo** : l'app passe au bleu et ne montre plus que
+l'immobilier — biens favoris, recherches immobilières, et l'onglet Marché qui
+estime un appartement ou une maison dans une commune. Retour en **Auto** à tout
+moment, rien n'est effacé.
+
+La liste des communes vient du référentiel officiel `geo.api.gouv.fr` : le
+container `web` doit pouvoir sortir sur Internet, ce qui est le cas par défaut.
+S'il ne le peut pas, un code postal à 5 chiffres suffit encore.
+
+À la première estimation d'une commune, le collecteur cherche sous quelle
+forme leboncoin comprend ce lieu, et le note pour les suivantes. Les essais se
+lisent dans les logs :
+
+```powershell
+docker compose logs -f worker
+```
+
+Lignes `[immo] … lieu « … », N annonces dont X % du coin` : la forme retenue
+est la première dont la plupart des annonces sont bien du coin. Si aucune ne
+l'est, l'estimation le dit (« leboncoin ne reconnaît pas ce lieu ») plutôt que
+d'afficher un marché faux.
+
 ## Dépannage
 
 **« Session leboncoin à rétablir » dans l'app**

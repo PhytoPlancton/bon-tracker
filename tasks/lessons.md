@@ -144,6 +144,9 @@ Format : [date] | ce qui a mal tourné | règle pour l'éviter
 - [2026-10-03] | Le rattachement au Chrome dédié expirait : on l'a cru lent sous le nombre d'onglets, porté le délai à 60 s et conseillé d'en fermer. Reproduit, trente onglets se rattachent en 0,3 s ; c'est un seul onglet resté sur une alerte ou un « Quitter le site ? » qui bloquait tout, sans fin. |
   Reproduire une panne avant d'en corriger la cause supposée : allonger un délai ne soigne pas une attente qui ne finira jamais.
 
+- [2026-10-04] | Le bouton « Supprimer » de l'app ouvrait une confirmation native. Ouverte dans le Chrome dédié et laissée sans réponse, ce genre de boîte fige l'onglet, et avec lui tout rattachement du collecteur. |
+  Pas de boîte de dialogue native dans l'app : une action à confirmer se confirme d'un second appui.
+
 ## Règles permanentes du projet
 - Un seul client MongoDB, `maxPoolSize` bas : le quota de 500 connexions est
   partagé entre plusieurs applications.
@@ -153,3 +156,7 @@ Format : [date] | ce qui a mal tourné | règle pour l'éviter
 - Le front ne requête jamais Mongo directement : tout passe par l'API.
 - Un prix ne s'interpole pas : le graphe est en marches d'escalier, une ligne
   droite entre deux relevés inventerait des valeurs qui n'ont pas existé.
+- Jamais d'`alert`, de `confirm` ni de `prompt` dans l'app : une boîte restée
+  ouverte dans le Chrome dédié bloque le collecteur.
+- Auto et immo ne partagent que la mécanique des collectes : chacun ses
+  collections, ses écrans et ses règles de comparaison.

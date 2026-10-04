@@ -6,6 +6,16 @@ changement de prix** — pas un par relevé.
 
 Interface pensée pour le téléphone, installable sur l'écran d'accueil iOS.
 
+Deux applications en une, au choix dans les réglages :
+
+- **Bon Tracker** (auto) — suivi des annonces et cote d'un modèle de voiture
+  d'après toutes ses annonces : prix / kilométrage, motorisations, affaires.
+- **Bon Tracker Immo** — suivi des biens et marché d'un appartement ou d'une
+  maison dans une commune : prix (ou loyer) au m², par pièces, décote des
+  passoires énergétiques, valeur de ton bien, rendement brut.
+
+Les données des deux modes vivent à part ; changer de mode n'efface rien.
+
 ## Organisation
 
 ```
