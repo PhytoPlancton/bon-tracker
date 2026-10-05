@@ -109,6 +109,39 @@ Remplace la lecture par segment : on choisit une voiture, on voit ce qu'elle vau
       lues qui défilent
 - [x] Médiane par moteur ; pas d'« affaire » sans moteur connu
 
+## Bon Tracker Immo (2026-10-04)
+Un second domaine dans la même app, bien séparé : on bascule dans les réglages.
+- [x] Mode auto / immo porté par le compte (suit l'iPhone comme l'ordinateur) ;
+      thème bleu, marque « Bon Tracker Immo », onglet Marché vers /immo
+- [x] Suivi, recherches et compteurs filtrés par domaine (catégorie de
+      l'annonce dans son adresse, catégorie de la recherche) ; rien n'est
+      effacé, le collecteur relève toujours tout
+- [x] Données à part : collections `immo_queries` et `immo_ads` ; seul le cycle
+      de vie des collectes est partagé (`collect-jobs`, `collect`)
+- [x] Demande : achat ou location, appartement ou maison, commune (référentiel
+      geo.api.gouv.fr, arrondissements compris), rayon, surface du bien ; la
+      recherche couvre 0,65 à 1,5 fois cette surface
+- [x] Le collecteur découvre la forme du lieu que leboncoin comprend (nom et
+      code postal, centre et rayon…) en vérifiant que les annonces sont du
+      coin ; la forme retenue est réutilisée pour ce lieu
+- [x] Prix au m² médian et quartiles, par pièces, décote des passoires (DPE F,
+      G) à taille égale, écart du neuf ; graphique prix / surface
+- [x] « Ton appartement » : valeur d'après les biens de surface proche et même
+      nombre de pièces ; affaires à 15 % sous leurs comparables au m²
+- [x] Viager, nue-propriété, enchères, résidences services, colocation,
+      courte durée mis à part ; travaux, neuf, vendu loué signalés
+- [x] Rendement brut quand loyers et prix de vente du même lieu sont connus
+- [x] 88 vérifications (tests/immo.mjs) ; 36 pour le collecteur face à un faux
+      leboncoin (worker/tests/collecte.mjs)
+- [ ] Éprouver sur leboncoin réel : forme du lieu retenue, clés `square`,
+      `rooms`, `real_estate_type`, `energy_rate` présentes
+## Fusion (2026-10-05)
+- [x] Branche immobilier réunie à `main` : cycle de vie commun des collectes
+      étendu au relevé des nouveautés, graphique générique, barre du bas par
+      mode (Alertes en auto seulement), boutons à second appui
+- [x] Commits de la branche réécrits sans mention d'attribution
+- [x] 311 vérifications web, 45 pour le collecteur (faux leboncoin)
+
 ## Alertes et négociation (2026-10-05)
 Objectif : une raison d'ouvrir l'app chaque jour — être prévenu le premier
 d'une bonne affaire, et arriver armé pour la négocier.

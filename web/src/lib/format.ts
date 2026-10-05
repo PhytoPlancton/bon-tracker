@@ -35,6 +35,24 @@ export function relativeTime(value: string | Date | null): string {
   return `il y a ${days} j`;
 }
 
+/** Années et puissance demandées, ex. « 2010 – 2016 · 150 – 250 ch ». */
+export function criteriaLabel(item: {
+  yearMin: number | null;
+  yearMax: number | null;
+  powerMin?: number | null;
+  powerMax?: number | null;
+}) {
+  const power = powerLabel(item);
+  return power ? `${yearsLabel(item)} · ${power}` : yearsLabel(item);
+}
+
+function powerLabel(item: { powerMin?: number | null; powerMax?: number | null }) {
+  if (item.powerMin && item.powerMax) return `${item.powerMin} – ${item.powerMax} ch`;
+  if (item.powerMin) return `${item.powerMin} ch et plus`;
+  if (item.powerMax) return `jusqu’à ${item.powerMax} ch`;
+  return null;
+}
+
 export function yearsLabel(item: { yearMin: number | null; yearMax: number | null }) {
   if (item.yearMin && item.yearMax) return `${item.yearMin} – ${item.yearMax}`;
   if (item.yearMin) return `depuis ${item.yearMin}`;

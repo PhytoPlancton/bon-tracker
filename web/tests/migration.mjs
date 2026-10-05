@@ -191,7 +191,9 @@ try {
   const withLbc = await loginStatus(LBC_PASSWORD);
   check('mot de passe leboncoin accepté', withLbc === 200, withLbc);
   check('et de nouveau à la suite', (await loginStatus(LBC_PASSWORD)) === 200, null);
-  check('un mauvais mot de passe reste refusé', (await loginStatus('pas-le-bon-mot-de-passe')) === 401, null);
+  // Sans collecteur pour interroger leboncoin, le refus vient en 503 plutôt qu'en 401 : il n'ouvre pas l'app non plus.
+  const wrong = await loginStatus('pas-le-bon-mot-de-passe');
+  check('un mauvais mot de passe reste refusé', wrong !== 200, wrong);
 } finally {
   server.kill('SIGTERM');
   await mongo.stop();

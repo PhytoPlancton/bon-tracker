@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useApi } from '@/lib/client';
-import { relativeTime, yearsLabel } from '@/lib/format';
+import { relativeTime, criteriaLabel } from '@/lib/format';
 
 interface Estimation {
   id: string;
@@ -12,6 +12,8 @@ interface Estimation {
   model: string;
   yearMin: number | null;
   yearMax: number | null;
+  powerMin?: number | null;
+  powerMax?: number | null;
   status: 'queued' | 'running' | 'done' | 'error';
   pages: number;
   ads: number;
@@ -30,6 +32,8 @@ export default function MarketPage() {
   const [model, setModel] = useState('');
   const [yearMin, setYearMin] = useState('');
   const [yearMax, setYearMax] = useState('');
+  const [powerMin, setPowerMin] = useState('');
+  const [powerMax, setPowerMax] = useState('');
   const [sending, setSending] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -59,6 +63,8 @@ export default function MarketPage() {
           model,
           yearMin: yearMin ? Number(yearMin) : null,
           yearMax: yearMax ? Number(yearMax) : null,
+          powerMin: powerMin ? Number(powerMin) : null,
+          powerMax: powerMax ? Number(powerMax) : null,
         }),
       });
       const body = await response.json().catch(() => ({}));
@@ -134,6 +140,24 @@ export default function MarketPage() {
               className={INPUT}
             />
           </Field>
+          <Field label="Chevaux min.">
+            <input
+              value={powerMin}
+              onChange={(event) => setPowerMin(event.target.value.replace(/\D/g, '').slice(0, 4))}
+              inputMode="numeric"
+              placeholder="150"
+              className={INPUT}
+            />
+          </Field>
+          <Field label="Chevaux max.">
+            <input
+              value={powerMax}
+              onChange={(event) => setPowerMax(event.target.value.replace(/\D/g, '').slice(0, 4))}
+              inputMode="numeric"
+              placeholder="250"
+              className={INPUT}
+            />
+          </Field>
         </div>
 
         <datalist id="brands">
@@ -144,8 +168,9 @@ export default function MarketPage() {
         </datalist>
 
         <p className="text-[11px] leading-relaxed text-zinc-500">
-          Les années cernent la génération (ex. Boxster 986 : 1997–2004). La motorisation se
-          choisit ensuite, sur le graphique.
+          Les années cernent la génération (ex. Boxster 986 : 1997–2004). Les chevaux (DIN)
+          resserrent un modèle très diffusé sur ses motorisations qui t’intéressent ; le détail
+          se choisit ensuite, sur le graphique.
         </p>
 
         {message && <p className="text-[12px] text-up">{message}</p>}
@@ -181,7 +206,7 @@ export default function MarketPage() {
                   <div className="truncate text-[15px] font-medium text-zinc-100">
                     {item.brand} {item.model}
                   </div>
-                  <div className="truncate text-[11px] text-zinc-500">{yearsLabel(item)}</div>
+                  <div className="truncate text-[11px] text-zinc-500">{criteriaLabel(item)}</div>
                 </div>
                 <StatusBadge item={item} />
               </Link>

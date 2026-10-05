@@ -5,11 +5,12 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { CollectProgress, type Activity } from '@/components/collect-progress';
 import { NegotiateButton } from '@/components/negotiate-button';
+import { ConfirmButton } from '@/components/confirm-button';
 import { PriceKmChart, type ColorBy } from '@/components/price-km-chart';
 import { WatchPanel } from '@/components/watch-panel';
 import { useApi } from '@/lib/client';
 import { analyze, estimate, plausible, type Ad } from '@/lib/estimation';
-import { formatPrice, relativeTime, yearsLabel } from '@/lib/format';
+import { formatPrice, relativeTime, criteriaLabel } from '@/lib/format';
 
 interface Detail {
   estimation: {
@@ -18,6 +19,8 @@ interface Detail {
     model: string;
     yearMin: number | null;
     yearMax: number | null;
+    powerMin?: number | null;
+    powerMax?: number | null;
     status: 'queued' | 'running' | 'done' | 'error';
     pages: number;
     ads: number;
@@ -25,6 +28,7 @@ interface Detail {
     collectedAt: string | null;
     activity?: Activity | null;
     runMode?: 'full' | 'fresh';
+    stopRequested?: boolean;
   };
   ads: Ad[];
 }
@@ -42,6 +46,7 @@ export default function EstimationPage({ params }: { params: Promise<{ id: strin
   const [year, setYear] = useState('');
   const [km, setKm] = useState('');
   const [refreshing, setRefreshing] = useState(false);
+  const [stopping, setStopping] = useState(false);
   const [colorBy, setColorBy] = useState<ColorBy>('version');
 
   const status = data?.estimation.status;
@@ -112,8 +117,14 @@ export default function EstimationPage({ params }: { params: Promise<{ id: strin
     setRefreshing(false);
   }
 
+  async function stop() {
+    setStopping(true);
+    await fetch(`/api/estimations/${id}/stop`, { method: 'POST' });
+    await reload();
+    setStopping(false);
+  }
+
   async function remove() {
-    if (!confirm('Supprimer cette estimation ?')) return;
     await fetch(`/api/estimations/${id}`, { method: 'DELETE' });
     router.push('/marche');
   }
@@ -144,7 +155,7 @@ export default function EstimationPage({ params }: { params: Promise<{ id: strin
           {estimation.brand} {estimation.model}
         </h1>
         <p className="text-xs text-zinc-500">
-          {yearsLabel(estimation)}
+          {criteriaLabel(estimation)}
           {estimation.collectedAt && ` · relevé ${relativeTime(estimation.collectedAt)}`}
         </p>
       </header>
@@ -164,6 +175,20 @@ export default function EstimationPage({ params }: { params: Promise<{ id: strin
           ads={estimation.ads}
           activity={estimation.activity}
         />
+      )}
+
+      {collecting && (
+        <button
+          onClick={stop}
+          disabled={stopping || estimation.stopRequested}
+          className="mb-3 w-full rounded-xl border border-ink-line bg-ink-soft py-2.5 text-[14px] text-zinc-200 disabled:opacity-50"
+        >
+          {estimation.stopRequested
+            ? 'Arrêt demandé : fin de la page en cours…'
+            : status === 'queued'
+              ? 'Annuler cette collecte'
+              : 'Arrêter et garder ce qui a été lu'}
+        </button>
       )}
 
       {status === 'error' && (
@@ -385,12 +410,12 @@ export default function EstimationPage({ params }: { params: Promise<{ id: strin
         >
           {collecting ? 'Collecte en cours…' : 'Actualiser'}
         </button>
-        <button
-          onClick={remove}
+        <ConfirmButton
+          onConfirm={remove}
+          label="Supprimer"
+          confirmLabel="Confirmer"
           className="rounded-xl border border-ink-line bg-ink-soft px-4 py-2.5 text-[14px] text-zinc-500"
-        >
-          Supprimer
-        </button>
+        />
       </div>
 
       <p className="mt-4 px-1 text-[11px] leading-relaxed text-zinc-600">

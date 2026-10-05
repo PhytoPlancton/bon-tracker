@@ -1,4 +1,5 @@
 import type { AnyBulkWriteOperation } from 'mongodb';
+import { listingModeFilter, type Mode } from './mode';
 import { collections } from './mongo';
 import type { Listing, ListingSource, PricePoint, ScrapedListing } from './types';
 
@@ -130,12 +131,13 @@ export interface ListingSummary {
 /** Liste enrichie du premier prix connu et du nombre de changements de prix. */
 export async function listListings(
   uid: string,
-  options: { includeInactive?: boolean; source?: string } = {},
+  options: { includeInactive?: boolean; source?: string; mode?: Mode } = {},
 ): Promise<ListingSummary[]> {
   const { listings } = await collections();
   const filter: Record<string, unknown> = { uid };
   if (!options.includeInactive) filter.isActive = true;
   if (options.source) filter.sources = options.source;
+  if (options.mode) Object.assign(filter, listingModeFilter(options.mode));
 
   const docs = await listings
     .aggregate<ListingSummary & { _id?: unknown }>([

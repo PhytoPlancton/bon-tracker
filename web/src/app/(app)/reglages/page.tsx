@@ -1,9 +1,12 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { CarIcon, HouseIcon, useMode } from '@/components/mode';
 import { NotificationsToggle } from '@/components/notifications-toggle';
 import { useApi } from '@/lib/client';
 import { formatDateTime, relativeTime } from '@/lib/format';
+import type { Mode } from '@/lib/mode';
 
 interface StatusResponse {
   lastRun: {
@@ -36,7 +39,8 @@ const STATUS_LABEL: Record<string, { text: string; className: string }> = {
 };
 
 export default function SettingsPage() {
-  const { data, reload } = useApi<StatusResponse>('/api/status');
+  const mode = useMode();
+  const { data, reload } = useApi<StatusResponse>(`/api/status?mode=${mode}`);
   const [collecting, setCollecting] = useState(false);
   const [collectMessage, setCollectMessage] = useState<string | null>(null);
 
@@ -91,6 +95,8 @@ export default function SettingsPage() {
       <header className="pb-4 pt-1">
         <h1 className="text-2xl font-semibold tracking-tight">Réglages</h1>
       </header>
+
+      <ModeSwitch />
 
       <div className="mb-4">
         <NotificationsToggle />
@@ -170,6 +176,81 @@ export default function SettingsPage() {
         Se déconnecter
       </button>
     </>
+  );
+}
+
+const MODE_CHOICES: { mode: Mode; label: string; hint: string; icon: typeof CarIcon }[] = [
+  { mode: 'auto', label: 'Auto', hint: 'Voitures', icon: CarIcon },
+  { mode: 'immo', label: 'Immo', hint: 'Immobilier', icon: HouseIcon },
+];
+
+/**
+ * Bascule entre Bon Tracker et Bon Tracker Immo. Le choix suit le compte, pas
+ * l'appareil : l'iPhone et l'ordinateur restent dans le même mode.
+ */
+function ModeSwitch() {
+  const mode = useMode();
+  const router = useRouter();
+  const [pending, setPending] = useState<Mode | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function choose(next: Mode) {
+    if (next === mode || pending) return;
+    setPending(next);
+    setError(null);
+    try {
+      const response = await fetch('/api/mode', {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ mode: next }),
+      });
+      if (!response.ok) throw new Error();
+      // La mise en page, rendue côté serveur, relit le mode : thème, onglets
+      // et contenus basculent sans recharger la page.
+      router.refresh();
+    } catch {
+      setError('Le changement de mode n’a pas abouti. Réessaie.');
+    } finally {
+      setPending(null);
+    }
+  }
+
+  return (
+    <section className="mb-4 rounded-2xl border border-ink-line bg-ink-soft p-4">
+      <h2 className="text-sm font-medium text-zinc-200">Mode</h2>
+      <div className="mt-3 grid grid-cols-2 gap-2" role="radiogroup" aria-label="Mode">
+        {MODE_CHOICES.map(({ mode: value, label, hint, icon: Icon }) => {
+          const selected = (pending ?? mode) === value;
+          return (
+            <button
+              key={value}
+              type="button"
+              role="radio"
+              aria-checked={selected}
+              disabled={pending !== null}
+              onClick={() => void choose(value)}
+              className={`flex items-center gap-3 rounded-xl border px-3 py-3 text-left transition-colors ${
+                selected ? 'border-accent bg-accent/10 text-zinc-100' : 'border-ink-line bg-ink text-zinc-400'
+              }`}
+            >
+              <span className={selected ? 'text-accent' : 'text-zinc-500'}>
+                <Icon />
+              </span>
+              <span className="min-w-0">
+                <span className="block text-[15px] font-medium">{label}</span>
+                <span className="block truncate text-[11px] text-zinc-500">{hint}</span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      <p className="mt-3 text-[12px] leading-relaxed text-zinc-500">
+        {mode === 'immo'
+          ? 'Bon Tracker Immo : le suivi, les recherches et le marché ne montrent que l’immobilier. Tes voitures restent là, il suffit de revenir en mode Auto.'
+          : 'Le mode Immo transforme l’app en Bon Tracker Immo : suivi de tes biens favoris, recherches immobilières et prix au m² du marché.'}
+      </p>
+      {error && <p className="mt-2 text-[12px] text-up">{error}</p>}
+    </section>
   );
 }
 

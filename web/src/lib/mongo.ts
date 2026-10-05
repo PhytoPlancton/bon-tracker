@@ -1,5 +1,6 @@
 import { MongoClient, type Collection, type Db } from 'mongodb';
 import { env } from './env';
+import type { ImmoAd, ImmoQuery } from './immo/types';
 import type {
   Alert,
   Listing,
@@ -91,6 +92,13 @@ async function ensureIndexes(db: Db): Promise<void> {
     ['negotiations', 'negotiations', { id: 1 }, { unique: true }],
     ['negotiations', 'negotiations', { uid: 1, createdAt: -1 }, {}],
     ['negotiations', 'negotiations', { queryId: 1 }, {}],
+    // L'immobilier vit à part : ses collectes et ses biens ne croisent jamais
+    // ceux des voitures.
+    ['immo_ads', 'immo_ads', { lbcId: 1 }, { unique: true }],
+    ['immo_queries', 'immo_queries', { id: 1 }, { unique: true }],
+    ['immo_queries', 'immo_queries', { uid: 1, createdAt: -1 }, {}],
+    ['immo_queries', 'immo_queries', { key: 1, collectedAt: -1 }, {}],
+    ['immo_queries', 'immo_queries', { 'place.code': 1, radiusKm: 1 }, {}],
   ];
 
   for (const [, collection, keys, options] of wanted) {
@@ -132,5 +140,7 @@ export async function collections() {
     alerts: db.collection<Alert>('alerts') as Collection<Alert>,
     pushSubscriptions: db.collection<PushSubscriptionRecord>('push_subscriptions') as Collection<PushSubscriptionRecord>,
     negotiations: db.collection<Negotiation>('negotiations') as Collection<Negotiation>,
+    immoAds: db.collection<ImmoAd>('immo_ads') as Collection<ImmoAd>,
+    immoQueries: db.collection<ImmoQuery>('immo_queries') as Collection<ImmoQuery>,
   };
 }

@@ -4,6 +4,7 @@ import { use, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { CollectProgress, type Activity } from '@/components/collect-progress';
+import { ConfirmButton } from '@/components/confirm-button';
 import { PriceKmChart } from '@/components/price-km-chart';
 import { useApi } from '@/lib/client';
 import type { Ad } from '@/lib/estimation';
@@ -79,7 +80,6 @@ export default function NegotiationPage({ params }: { params: Promise<{ id: stri
   }
 
   async function remove() {
-    if (!confirm('Supprimer cette négociation ?')) return;
     await fetch(`/api/negociations/${id}`, { method: 'DELETE' });
     router.push('/negocier');
   }
@@ -295,13 +295,12 @@ export default function NegotiationPage({ params }: { params: Promise<{ id: stri
         >
           {pending ? 'Préparation…' : 'Mettre à jour'}
         </button>
-        <button
-          type="button"
-          onClick={remove}
+        <ConfirmButton
+          onConfirm={remove}
+          label="Supprimer"
+          confirmLabel="Confirmer"
           className="rounded-xl border border-ink-line bg-ink-soft px-4 py-2.5 text-[14px] text-zinc-500"
-        >
-          Supprimer
-        </button>
+        />
       </div>
 
       <p className="mt-4 px-1 text-[11px] leading-relaxed text-zinc-600">

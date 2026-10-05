@@ -1,3 +1,5 @@
+import type { Mode } from './mode';
+
 export type ListingSource = 'favorites' | `search:${string}`;
 
 /** Secret chiffré au repos (AES-256-GCM). */
@@ -26,6 +28,8 @@ export interface User {
   lbcStatus: LbcStatus;
   lbcCheckedAt: Date | null;
   createdAt: Date;
+  /** Auto ou immo, choisi dans les réglages ; absent, c'est l'auto. */
+  mode?: Mode;
 }
 
 export interface Listing {
@@ -147,7 +151,10 @@ export interface MarketQuery {
   model: string;
   yearMin: number | null;
   yearMax: number | null;
-  /** Clé de mutualisation : même modèle et mêmes années, même collecte. */
+  /** Puissance DIN en chevaux ; absente des estimations plus anciennes. */
+  powerMin?: number | null;
+  powerMax?: number | null;
+  /** Clé de mutualisation : même modèle, mêmes années et même puissance, même collecte. */
   key: string;
   status: MarketQueryStatus;
   pages: number;
@@ -161,6 +168,10 @@ export interface MarketQuery {
   createdAt: Date;
   /** Ce que fait le collecteur en ce moment, pour l'écran d'attente. */
   activity?: MarketActivity | null;
+  /** Arrêt demandé depuis l'application : le collecteur garde ce qu'il a lu et s'arrête. */
+  stopRequested?: boolean;
+  /** Identifie l'envoi en cours au collecteur : un envoi plus ancien qui se réveille est écarté. */
+  runId?: string;
   /** Dernière nouvelle du collecteur : sans elle depuis trop longtemps, la collecte est morte. */
   updatedAt?: Date;
   collectedAt: Date | null;

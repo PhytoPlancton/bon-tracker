@@ -72,6 +72,8 @@ async function attach(negotiation: Negotiation, ad: MarketAd): Promise<StartOutc
     // déborder sur une autre génération dans la plupart des cas.
     yearMin: ad.year! - 2,
     yearMax: ad.year! + 2,
+    powerMin: null,
+    powerMax: null,
     codes: { brand: ad.brandCode!, model: ad.modelCode! },
   });
 

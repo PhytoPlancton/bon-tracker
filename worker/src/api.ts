@@ -13,10 +13,19 @@ export interface ScrapedListing {
   publishedAt?: string | null;
   /**
    * Caractéristiques telles que le site les publie : puissance, année,
-   * kilométrage, boîte. Relevées sans présumer lesquelles existent — c'est
-   * la seule base fiable pour comparer deux voitures entre elles.
+   * kilométrage, boîte, surface, pièces, DPE. Relevées sans présumer
+   * lesquelles existent — c'est la seule base fiable pour comparer deux
+   * annonces entre elles.
    */
   attributes?: Record<string, string>;
+  /** Position de l'annonce, pour vérifier qu'un bien est bien dans le rayon demandé. */
+  lat?: number | null;
+  lng?: number | null;
+  /**
+   * Début de la description : un viager ou une vente aux enchères ne se
+   * lisent souvent que là.
+   */
+  body?: string | null;
 }
 
 export interface TrackedSearch {
@@ -83,8 +92,16 @@ export function reportLbcStatus(
 export function ingest(uid: string, source: string, listings: ScrapedListing[]) {
   return call<RunStats>('/api/internal/ingest', {
     method: 'POST',
-    body: JSON.stringify({ uid, source, listings }),
+    body: JSON.stringify({ uid, source, listings: listings.map(withoutBody) }),
   });
+}
+
+/**
+ * La description ne sert qu'au marché immobilier, qui y lit viagers et
+ * enchères : ailleurs, elle alourdirait l'envoi pour rien.
+ */
+function withoutBody({ body: _body, ...listing }: ScrapedListing): ScrapedListing {
+  return listing;
 }
 
 export function fetchTrackedSearches(uid: string) {
@@ -131,21 +148,32 @@ export interface MarketActivity {
   total: number | null;
 }
 
-export interface MarketQueryPatch {
-  activity?: MarketActivity;
-  mode?: 'full' | 'fresh';
-  status?: 'running' | 'done' | 'error';
-  pages?: number;
-  ads?: number;
-  codes?: { brand: string; model: string } | null;
-  error?: string;
-}
-
-/** Avancement d'une collecte de marché, affiché en direct dans l'application. */
-export function updateMarketQuery(queryId: string, patch: MarketQueryPatch) {
-  return call<{ ok: boolean }>(`/api/internal/market/queries/${encodeURIComponent(queryId)}`, {
+/**
+ * Avancement d'une collecte de marché, affiché en direct dans l'application :
+ * statut, pages lues, activité, et ce que la collecte a appris (codes du
+ * modèle). Porte la marque de l'envoi servi : l'application écarte celui d'un
+ * envoi remplacé, et répond `stop` quand l'arrêt a été demandé.
+ */
+export function updateMarketQuery(queryId: string, patch: Record<string, unknown>) {
+  return call<{ ok: boolean; stop?: boolean }>(`/api/internal/market/queries/${encodeURIComponent(queryId)}`, {
     method: 'PATCH',
     body: JSON.stringify(patch),
+  });
+}
+
+/** Avancement d'une collecte immobilière, sur le modèle de celle des voitures. */
+export function updateImmoQuery(queryId: string, patch: Record<string, unknown>) {
+  return call<{ ok: boolean; stop?: boolean }>(`/api/internal/immo/queries/${encodeURIComponent(queryId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  });
+}
+
+/** Les biens d'un marché, versés dans la base immobilière commune à tous les comptes. */
+export function ingestImmoAds(queryId: string, ads: ScrapedListing[]) {
+  return call<{ ok: boolean }>('/api/internal/immo/ads', {
+    method: 'POST',
+    body: JSON.stringify({ queryId, ads }),
   });
 }
 
@@ -153,7 +181,7 @@ export function updateMarketQuery(queryId: string, patch: MarketQueryPatch) {
 export function ingestMarketAds(queryId: string, ads: ScrapedListing[]) {
   return call<{ ok: boolean }>('/api/internal/market/ads', {
     method: 'POST',
-    body: JSON.stringify({ queryId, ads }),
+    body: JSON.stringify({ queryId, ads: ads.map(withoutBody) }),
   });
 }
 
@@ -174,10 +202,13 @@ export function claimDueMarket() {
   return call<{
     jobs: {
       queryId: string;
+      runId: string;
       brand: string;
       model: string;
       yearMin: number | null;
       yearMax: number | null;
+      powerMin: number | null;
+      powerMax: number | null;
       codes: { brand: string; model: string } | null;
       mode: 'full' | 'fresh';
     }[];

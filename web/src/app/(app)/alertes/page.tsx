@@ -3,6 +3,7 @@
 import { Suspense, useEffect } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
+import { ConfirmButton } from '@/components/confirm-button';
 import { NegotiateButton } from '@/components/negotiate-button';
 import { NotificationsToggle } from '@/components/notifications-toggle';
 import { useApi } from '@/lib/client';
@@ -79,7 +80,6 @@ function Alerts() {
   }
 
   async function remove(watch: WatchItem) {
-    if (!confirm(`Supprimer la veille « ${watch.label} » et ses alertes ?`)) return;
     await fetch(`/api/watches/${watch.id}`, { method: 'DELETE' });
     await Promise.all([reloadWatches(), reload()]);
   }
@@ -184,14 +184,14 @@ function Alerts() {
                   >
                     {watch.active ? 'Pause' : 'Reprendre'}
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => remove(watch)}
-                    aria-label="Supprimer la veille"
+                  {/* Second appui plutôt qu'une boîte native : ouverte dans le
+                      Chrome dédié, elle figerait le collecteur. */}
+                  <ConfirmButton
+                    onConfirm={() => remove(watch)}
+                    label="✕"
+                    confirmLabel="Supprimer ?"
                     className="rounded-lg border border-ink-line px-2.5 py-1 text-[12px] text-zinc-500"
-                  >
-                    ✕
-                  </button>
+                  />
                 </div>
               </div>
             </li>

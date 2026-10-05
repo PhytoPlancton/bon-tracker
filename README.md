@@ -6,20 +6,22 @@ changement de prix** — pas un par relevé.
 
 Interface pensée pour le téléphone, installable sur l'écran d'accueil iOS.
 
-## Ce que fait l'application
+Deux applications en une, au choix dans les réglages :
 
-- **Suivi** : l'historique de prix de tes favoris et des recherches suivies.
-- **Marché** : la cote d'un modèle d'après toutes ses annonces — nuage prix /
-  km manipulable comme une carte, médiane par moteur, valeur de ta voiture
-  d'après ses comparables, annonces nettement sous le marché.
-- **Alertes** : une veille sur un modèle (moteur, boîte, km et budget max,
-  seuil de −10 à −20 %). Le modèle est relu toutes les deux heures en journée ;
-  une voiture qui sort sous ses comparables, ou qui baisse encore, arrive en
-  notification sur l'iPhone.
-- **Négocier** : colle le lien d'une annonce. La fiche donne le prix juste
-  d'après ses comparables, trois prix (ouverture, cible, plafond), des
-  arguments chiffrés (durée en ligne, baisses déjà consenties, comparables
-  moins chères) et un message prêt à envoyer au vendeur.
+- **Bon Tracker** (auto) — suivi des annonces et cote d'un modèle de voiture
+  d'après toutes ses annonces : prix / kilométrage, motorisations, affaires.
+  - **Alertes** : une veille sur un modèle (moteur, boîte, km et budget max,
+    seuil de −10 à −20 %), relue toutes les deux heures en journée ; une
+    voiture qui sort sous ses comparables, ou qui baisse encore, arrive en
+    notification sur l'iPhone.
+  - **Négocier** : colle le lien d'une annonce ; la fiche donne le prix juste
+    d'après ses comparables, trois prix (ouverture, cible, plafond), des
+    arguments chiffrés et un message prêt à envoyer au vendeur.
+- **Bon Tracker Immo** — suivi des biens et marché d'un appartement ou d'une
+  maison dans une commune : prix (ou loyer) au m², par pièces, décote des
+  passoires énergétiques, valeur de ton bien, rendement brut.
+
+Les données des deux modes vivent à part ; changer de mode n'efface rien.
 
 ## Organisation
 

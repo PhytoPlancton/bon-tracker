@@ -271,10 +271,14 @@ export async function markAlertsRead(uid: string): Promise<void> {
 
 export interface MarketJob {
   queryId: string;
+  /** Marque de l'envoi : un envoi plus ancien qui se réveillerait est écarté. */
+  runId: string;
   brand: string;
   model: string;
   yearMin: number | null;
   yearMax: number | null;
+  powerMin: number | null;
+  powerMax: number | null;
   codes: { brand: string; model: string } | null;
   mode: 'full' | 'fresh';
 }
@@ -315,19 +319,25 @@ export async function claimDueJobs(now = new Date()): Promise<MarketJob[]> {
   }
 
   const chosen = due.sort((a, b) => b.age - a.age).slice(0, CLAIM_LIMIT);
+  const jobs: MarketJob[] = [];
   for (const { query, mode } of chosen) {
+    const runId = randomUUID();
     await marketQueries.updateOne(
       { id: query.id },
-      { $set: { status: 'queued', runMode: mode, error: null, updatedAt: now } },
+      { $set: { status: 'queued', runMode: mode, runId, stopRequested: false, error: null, updatedAt: now } },
     );
+    jobs.push({
+      queryId: query.id,
+      runId,
+      brand: query.brand,
+      model: query.model,
+      yearMin: query.yearMin,
+      yearMax: query.yearMax,
+      powerMin: query.powerMin ?? null,
+      powerMax: query.powerMax ?? null,
+      codes: query.codes,
+      mode,
+    });
   }
-  return chosen.map(({ query, mode }) => ({
-    queryId: query.id,
-    brand: query.brand,
-    model: query.model,
-    yearMin: query.yearMin,
-    yearMax: query.yearMax,
-    codes: query.codes,
-    mode,
-  }));
+  return jobs;
 }

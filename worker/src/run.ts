@@ -75,7 +75,7 @@ async function collectAll(): Promise<void> {
     // Le rattachement peut demander plusieurs dizaines de secondes sur un
     // navigateur chargé : sans cette ligne, l'attente passe pour une panne.
     log(`Rattachement au Chrome dédié (${config.chromeHost}:${config.chromePort})…`);
-    browser = await connectToChrome();
+    browser = await connectToChrome(log);
     await closeLeftovers(browser);
     log(`Connecté · ${users.length} compte(s) à relever`);
 

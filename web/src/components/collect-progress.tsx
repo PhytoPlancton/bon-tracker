@@ -5,11 +5,14 @@ import { formatPrice } from '@/lib/format';
 
 export interface Activity {
   step: string;
+  /** Les dernières annonces lues : année et kilométrage d'une voiture, surface et pièces d'un logement. */
   recent: {
     title: string;
     price: number;
-    km: number | null;
-    year: number | null;
+    km?: number | null;
+    year?: number | null;
+    surface?: number | null;
+    rooms?: number | null;
     imageUrl: string | null;
     location: string | null;
   }[];
@@ -100,7 +103,7 @@ export function CollectProgress({
         <div className="flex items-end justify-between gap-3">
           <div className="min-w-0">
             <div className="text-[11px] uppercase tracking-wide text-accent">Collecte en direct</div>
-            <div className="truncate text-[15px] font-medium text-zinc-100">
+            <div className="line-clamp-2 text-[15px] font-medium text-zinc-100">
               On passe leboncoin au peigne fin : {label}
             </div>
           </div>
@@ -162,7 +165,13 @@ export function CollectProgress({
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-[12px] text-zinc-200">{item.title}</div>
                   <div className="truncate text-[11px] text-zinc-500">
-                    {[item.year, item.km !== null ? `${item.km.toLocaleString('fr-FR')} km` : null, item.location]
+                    {[
+                      item.year,
+                      item.km != null ? `${item.km.toLocaleString('fr-FR')} km` : null,
+                      item.surface ? `${item.surface.toLocaleString('fr-FR')} m²` : null,
+                      item.rooms ? `${item.rooms} p.` : null,
+                      item.location,
+                    ]
                       .filter(Boolean)
                       .join(' · ')}
                   </div>

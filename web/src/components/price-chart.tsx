@@ -8,7 +8,9 @@ export interface PricePoint {
   observedAt: string;
 }
 
-const SERIES = '#ff8f45';
+/** L'accent du mode : orange pour l'auto, bleu pour l'immo. Passé en style,
+ * seule forme où une variable CSS se résout sur un élément SVG. */
+const SERIES = 'rgb(var(--accent-soft))';
 const DOWN = '#4ade80';
 const UP = '#f87171';
 
@@ -128,8 +130,8 @@ export function PriceChart({ points, until }: { points: PricePoint[]; until: str
         <svg width={width || '100%'} height={HEIGHT} role="img" aria-label="Évolution du prix">
           <defs>
             <linearGradient id="price-area" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor={SERIES} stopOpacity="0.28" />
-              <stop offset="100%" stopColor={SERIES} stopOpacity="0" />
+              <stop offset="0%" style={{ stopColor: SERIES }} stopOpacity="0.28" />
+              <stop offset="100%" style={{ stopColor: SERIES }} stopOpacity="0" />
             </linearGradient>
           </defs>
 
@@ -159,7 +161,7 @@ export function PriceChart({ points, until }: { points: PricePoint[]; until: str
           <path
             d={geometry.path}
             fill="none"
-            stroke={SERIES}
+            style={{ stroke: SERIES }}
             strokeWidth="2"
             strokeLinejoin="round"
             strokeLinecap="round"
@@ -176,7 +178,7 @@ export function PriceChart({ points, until }: { points: PricePoint[]; until: str
                 cx={geometry.x(new Date(point.observedAt).getTime())}
                 cy={geometry.y(point.price)}
                 r={isActive ? 6 : 4.5}
-                fill={color}
+                style={{ fill: color }}
                 stroke="#14161a"
                 strokeWidth="2"
               />
