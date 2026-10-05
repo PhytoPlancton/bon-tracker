@@ -1,6 +1,18 @@
 import { MongoClient, type Collection, type Db } from 'mongodb';
 import { env } from './env';
-import type { Listing, MarketAd, MarketQuery, PricePoint, Run, SavedSearch, User } from './types';
+import type {
+  Alert,
+  Listing,
+  MarketAd,
+  MarketQuery,
+  Negotiation,
+  PricePoint,
+  PushSubscriptionRecord,
+  Run,
+  SavedSearch,
+  User,
+  Watch,
+} from './types';
 
 /**
  * Un seul client pour tout le process, avec un pool volontairement étroit :
@@ -68,6 +80,17 @@ async function ensureIndexes(db: Db): Promise<void> {
     ['market_queries', 'market_queries', { id: 1 }, { unique: true }],
     ['market_queries', 'market_queries', { uid: 1, createdAt: -1 }, {}],
     ['market_queries', 'market_queries', { key: 1, collectedAt: -1 }, {}],
+    ['watches', 'watches', { id: 1 }, { unique: true }],
+    ['watches', 'watches', { uid: 1, createdAt: -1 }, {}],
+    ['watches', 'watches', { key: 1, active: 1 }, {}],
+    ['alerts', 'alerts', { watchId: 1, lbcId: 1 }, { unique: true }],
+    ['alerts', 'alerts', { uid: 1, createdAt: -1 }, {}],
+    ['alerts', 'alerts', { uid: 1, readAt: 1 }, {}],
+    ['push_subscriptions', 'push_subscriptions', { endpoint: 1 }, { unique: true }],
+    ['push_subscriptions', 'push_subscriptions', { uid: 1 }, {}],
+    ['negotiations', 'negotiations', { id: 1 }, { unique: true }],
+    ['negotiations', 'negotiations', { uid: 1, createdAt: -1 }, {}],
+    ['negotiations', 'negotiations', { queryId: 1 }, {}],
   ];
 
   for (const [, collection, keys, options] of wanted) {
@@ -105,5 +128,9 @@ export async function collections() {
     runs: db.collection<Run>('runs') as Collection<Run>,
     marketAds: db.collection<MarketAd>('market_ads') as Collection<MarketAd>,
     marketQueries: db.collection<MarketQuery>('market_queries') as Collection<MarketQuery>,
+    watches: db.collection<Watch>('watches') as Collection<Watch>,
+    alerts: db.collection<Alert>('alerts') as Collection<Alert>,
+    pushSubscriptions: db.collection<PushSubscriptionRecord>('push_subscriptions') as Collection<PushSubscriptionRecord>,
+    negotiations: db.collection<Negotiation>('negotiations') as Collection<Negotiation>,
   };
 }

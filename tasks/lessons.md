@@ -141,6 +141,15 @@ Format : [date] | ce qui a mal tourné | règle pour l'éviter
 - [2026-09-30] | Une animation d'apparition avec remplissage « both » laissait les éléments invisibles tant qu'elle ne tournait pas (onglet masqué). |
   Une animation d'entrée ne doit jamais être la condition de la visibilité : sans remplissage, l'état par défaut reste visible.
 
+- [2026-10-05] | Les tests passaient alors qu'une dépendance (`web-push`) aurait pu manquer dans l'image : le serveur autonome la retrouvait dans le `node_modules` du projet, au-dessus de lui. |
+  Une nouvelle dépendance se vérifie sur une copie isolée du build autonome (`STANDALONE_DIR`), sans dossier parent où se rattraper — c'est ce que voit le container.
+
+- [2026-10-05] | La route d'ingestion du marché exigeait une collecte, alors qu'une annonce lue pour une négociation ou venue des favoris n'en a pas : la négociation d'une annonce « connue » ne trouvait jamais l'annonce. |
+  Quand un nouveau chemin réutilise une route existante, relire son schéma de validation : une contrainte juste pour l'ancien usage peut rejeter le nouveau en silence.
+
+- [2026-10-05] | Les comparables « moins chères » citées au vendeur incluaient des affaires bradées à −50 %, qui affaiblissent l'argument (« elle a forcément un défaut »). |
+  Un argument destiné à un tiers ne s'appuie que sur des exemples crédibles : dans la fourchette normale du marché, pas dans ses extrêmes.
+
 ## Règles permanentes du projet
 - Un seul client MongoDB, `maxPoolSize` bas : le quota de 500 connexions est
   partagé entre plusieurs applications.

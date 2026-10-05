@@ -2,6 +2,7 @@
 
 import { use } from 'react';
 import Link from 'next/link';
+import { NegotiateButton } from '@/components/negotiate-button';
 import { PriceChart } from '@/components/price-chart';
 import { useApi } from '@/lib/client';
 import { formatDateTime, formatPrice, relativeTime } from '@/lib/format';
@@ -133,6 +134,12 @@ export default function ListingPage({ params }: { params: Promise<{ id: string }
       >
         Ouvrir sur leboncoin ↗
       </a>
+
+      <NegotiateButton
+        lbcId={listing.lbcId}
+        label="Préparer la négociation"
+        className="mt-2 w-full rounded-xl py-3.5 text-sm"
+      />
     </>
   );
 }

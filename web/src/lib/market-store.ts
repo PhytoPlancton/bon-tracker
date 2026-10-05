@@ -86,7 +86,14 @@ export type CreateOutcome =
  */
 export async function createQuery(
   uid: string,
-  input: { brand: string; model: string; yearMin: number | null; yearMax: number | null },
+  input: {
+    brand: string;
+    model: string;
+    yearMin: number | null;
+    yearMax: number | null;
+    /** Codes du site déjà connus (lus sur une annonce) : épargnent la recherche libre. */
+    codes?: { brand: string; model: string } | null;
+  },
 ): Promise<CreateOutcome> {
   await settleStale();
   const { marketQueries } = await collections();
@@ -120,8 +127,8 @@ export async function createQuery(
   );
 
   const query = mine
-    ? { ...mine, status: 'queued' as const, error: null, codes: mine.codes ?? known?.codes ?? null, updatedAt: new Date() }
-    : buildQuery(uid, input, key, { codes: known?.codes ?? null });
+    ? { ...mine, status: 'queued' as const, error: null, codes: mine.codes ?? input.codes ?? known?.codes ?? null, updatedAt: new Date() }
+    : buildQuery(uid, input, key, { codes: input.codes ?? known?.codes ?? null });
 
   await marketQueries.updateOne({ id: query.id }, { $set: query }, { upsert: true });
   await dispatch(query);
@@ -174,6 +181,7 @@ export async function dispatch(query: MarketQuery): Promise<void> {
         yearMin: query.yearMin,
         yearMax: query.yearMax,
         codes: query.codes,
+        mode: 'full',
       }),
       signal: AbortSignal.timeout(10_000),
     });
@@ -209,43 +217,73 @@ export async function refreshQuery(uid: string, id: string): Promise<MarketQuery
 // ---------------------------------------------------------------------------
 
 /** Verse des annonces dans la base commune et les rattache à la collecte en cours. */
-export async function ingestMarketAds(queryId: string, scraped: ScrapedListing[]): Promise<number> {
+export async function ingestMarketAds(queryId: string | null, scraped: ScrapedListing[]): Promise<number> {
   const { marketAds, marketQueries } = await collections();
   const now = new Date();
+  const priced = scraped.filter((ad) => ad.price !== null);
 
-  const operations = scraped
-    .filter((ad) => ad.price !== null)
-    .map((ad) => {
-      const specs = readSpecs(ad.attributes);
-      // Un champ absent de cette lecture ne doit pas effacer celui qu'une
-      // lecture plus complète a déjà enregistré.
-      const known = Object.fromEntries(
-        Object.entries({
-          imageUrl: ad.imageUrl ?? null,
-          location: ad.location ?? null,
-          sellerType: ad.sellerType ?? null,
-          ...specs,
-        }).filter(([, value]) => value !== null && value !== undefined),
-      );
+  // Les prix déjà connus, pour n'inscrire dans l'historique que les changements.
+  const known = new Map(
+    (
+      await marketAds
+        .find(
+          { lbcId: { $in: priced.map((ad) => ad.lbcId) } },
+          { projection: { _id: 0, lbcId: 1, price: 1, firstSeenAt: 1, priceHistory: 1 } },
+        )
+        .toArray()
+    ).map((doc) => [doc.lbcId, doc]),
+  );
 
-      return {
-        updateOne: {
-          filter: { lbcId: ad.lbcId },
-          update: {
-            $set: { title: ad.title, url: ad.url, price: ad.price as number, lastSeenAt: now, ...known },
-            $setOnInsert: { lbcId: ad.lbcId, firstSeenAt: now },
-          },
-          upsert: true,
-        },
-      };
-    });
+  const operations = priced.map((ad) => {
+    const price = ad.price as number;
+    const specs = readSpecs(ad.attributes);
+    const publishedAt = parsePublication(ad.publishedAt);
+    // Un champ absent de cette lecture ne doit pas effacer celui qu'une
+    // lecture plus complète a déjà enregistré.
+    const fields = Object.fromEntries(
+      Object.entries({
+        imageUrl: ad.imageUrl ?? null,
+        location: ad.location ?? null,
+        sellerType: ad.sellerType ?? null,
+        publishedAt,
+        ...specs,
+      }).filter(([, value]) => value !== null && value !== undefined),
+    );
+
+    const previous = known.get(ad.lbcId);
+    const update: Record<string, unknown> = {
+      $set: { title: ad.title, url: ad.url, price, lastSeenAt: now, ...fields },
+      $setOnInsert: { lbcId: ad.lbcId, firstSeenAt: now, priceHistory: [{ price, at: now }] },
+    };
+    if (previous && previous.price !== price) {
+      // Une annonce connue d'avant l'historique reçoit son prix d'origine,
+      // daté du jour où on l'a vue : sans lui, la baisse serait invisible.
+      const history = previous.priceHistory?.length
+        ? [{ price, at: now }]
+        : [{ price: previous.price, at: previous.firstSeenAt }, { price, at: now }];
+      update.$push = { priceHistory: { $each: history } };
+      delete (update.$setOnInsert as Record<string, unknown>).priceHistory;
+    } else if (previous) {
+      delete (update.$setOnInsert as Record<string, unknown>).priceHistory;
+    }
+    return { updateOne: { filter: { lbcId: ad.lbcId }, update, upsert: true } };
+  });
 
   if (operations.length) await marketAds.bulkWrite(operations as never, { ordered: false });
-  await marketQueries.updateOne(
-    { id: queryId },
-    { $addToSet: { pendingIds: { $each: scraped.map((ad) => ad.lbcId) } } },
-  );
+  if (queryId) {
+    await marketQueries.updateOne(
+      { id: queryId },
+      { $addToSet: { pendingIds: { $each: scraped.map((ad) => ad.lbcId) } } },
+    );
+  }
   return operations.length;
+}
+
+/** « 2026-09-12 08:41:07 », heure de Paris telle que le site l'affiche. */
+function parsePublication(value: string | null | undefined): Date | null {
+  if (!value) return null;
+  const date = new Date(value.replace(' ', 'T') + (/[zZ]|[+-]\d\d:?\d\d$/.test(value) ? '' : '+02:00'));
+  return Number.isNaN(date.getTime()) ? null : date;
 }
 
 export async function updateQueryProgress(
@@ -257,28 +295,32 @@ export async function updateQueryProgress(
     codes?: { brand: string; model: string } | null;
     error?: string;
     activity?: MarketActivity;
+    mode?: 'full' | 'fresh';
   },
 ): Promise<boolean> {
   const { marketQueries } = await collections();
 
   if (patch.status === 'done') {
-    // La collecte réussie remplace la précédente d'un bloc : jamais de
-    // mélange entre deux relevés.
+    // Un relevé complet remplace le précédent d'un bloc : jamais de mélange
+    // entre deux relevés. Un relevé des nouveautés, lui, ne lit que les
+    // premières pages : il complète l'existant sans rien en retirer.
+    const fresh = { $eq: ['$runMode', 'fresh'] };
     const result = await marketQueries.updateOne({ id }, [
       {
         $set: {
           status: 'done',
-          adIds: '$pendingIds',
-          ads: { $size: '$pendingIds' },
-          pendingIds: [],
-          collectedAt: '$$NOW',
+          adIds: { $cond: [fresh, { $setUnion: ['$adIds', '$pendingIds'] }, '$pendingIds'] },
+          collectedAt: { $cond: [fresh, '$collectedAt', '$$NOW'] },
+          freshAt: '$$NOW',
           updatedAt: '$$NOW',
           activity: null,
           error: null,
           ...(patch.pages !== undefined ? { pages: patch.pages } : {}),
         },
       },
+      { $set: { ads: { $size: '$adIds' }, pendingIds: [] } },
     ]);
+    if (result.matchedCount > 0) await shareCollection(id);
     return result.matchedCount > 0;
   }
 
@@ -290,6 +332,7 @@ export async function updateQueryProgress(
   if (patch.activity !== undefined) set.activity = patch.activity;
   if (patch.status === 'running') {
     set.error = null;
+    set.runMode = patch.mode ?? 'full';
     if (patch.activity === undefined) set.activity = null;
     // Seul le démarrage repart de zéro : une remontée d'avancement qui
     // répéterait « en cours » ne doit pas perdre les annonces déjà reçues.
@@ -300,6 +343,30 @@ export async function updateQueryProgress(
 
   const result = await marketQueries.updateOne({ id }, { $set: set });
   return result.matchedCount > 0;
+}
+
+/**
+ * Les estimations d'un même modèle, quel que soit le compte, lisent les mêmes
+ * annonces : un relevé fait pour l'une profite aussitôt aux autres.
+ */
+async function shareCollection(id: string): Promise<void> {
+  const { marketQueries } = await collections();
+  const source = await marketQueries.findOne({ id }, { projection: { _id: 0 } });
+  if (!source) return;
+  await marketQueries.updateMany(
+    { key: source.key, id: { $ne: id }, status: { $in: ['done', 'error'] } },
+    {
+      $set: {
+        adIds: source.adIds,
+        ads: source.ads,
+        codes: source.codes,
+        collectedAt: source.collectedAt,
+        freshAt: source.freshAt ?? null,
+        status: 'done',
+        error: null,
+      },
+    },
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -345,6 +412,7 @@ function toAd(doc: MarketAd): Ad {
     sellerType: doc.sellerType ?? null,
     gearbox: doc.gearbox ?? null,
     fuel: doc.fuel ?? null,
+    onlineSince: doc.publishedAt ?? doc.firstSeenAt ?? null,
   };
 }
 
@@ -393,7 +461,7 @@ export async function catalogue(): Promise<{ brand: string; models: string[] }[]
     .sort((a, b) => a.brand.localeCompare(b.brand));
 }
 
-function pretty(text: string): string {
+export function pretty(text: string): string {
   const spaced = text.replace(/_/g, ' ').trim();
   return spaced === spaced.toUpperCase() && spaced.length > 3
     ? spaced.charAt(0) + spaced.slice(1).toLowerCase()
@@ -401,7 +469,7 @@ function pretty(text: string): string {
 }
 
 /** « PORSCHE_Boxster » devient « Boxster ». */
-function prettyModel(brand: string, model: string): string {
+export function prettyModel(brand: string, model: string): string {
   const prefix = `${brand}_`;
   const bare = model.toUpperCase().startsWith(prefix.toUpperCase()) ? model.slice(prefix.length) : model;
   return bare.replace(/_/g, ' ').trim();

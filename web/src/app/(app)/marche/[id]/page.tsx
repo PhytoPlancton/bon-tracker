@@ -4,7 +4,9 @@ import { use, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { CollectProgress, type Activity } from '@/components/collect-progress';
+import { NegotiateButton } from '@/components/negotiate-button';
 import { PriceKmChart, type ColorBy } from '@/components/price-km-chart';
+import { WatchPanel } from '@/components/watch-panel';
 import { useApi } from '@/lib/client';
 import { analyze, estimate, plausible, type Ad } from '@/lib/estimation';
 import { formatPrice, relativeTime, yearsLabel } from '@/lib/format';
@@ -22,6 +24,7 @@ interface Detail {
     error: string | null;
     collectedAt: string | null;
     activity?: Activity | null;
+    runMode?: 'full' | 'fresh';
   };
   ads: Ad[];
 }
@@ -146,7 +149,14 @@ export default function EstimationPage({ params }: { params: Promise<{ id: strin
         </p>
       </header>
 
-      {collecting && (
+      {collecting && estimation.runMode === 'fresh' && estimation.collectedAt ? (
+        // Relevé automatique des nouveautés : les chiffres restent ceux du
+        // dernier relevé complet, inutile de masquer la page.
+        <p className="mb-3 flex items-center gap-2 px-1 text-[12px] text-zinc-500">
+          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
+          Vérification des nouvelles annonces…
+        </p>
+      ) : collecting && (
         <CollectProgress
           label={`${estimation.brand} ${estimation.model}`}
           status={status === 'queued' ? 'queued' : 'running'}
@@ -352,11 +362,18 @@ export default function EstimationPage({ params }: { params: Promise<{ id: strin
                     key={deal.lbcId}
                     ad={deal}
                     note={`${Math.round(deal.ratio * 100)} % sous ${formatPrice(deal.reference)}`}
+                    action={<NegotiateButton lbcId={deal.lbcId} />}
                   />
                 ))}
               </ul>
             </section>
           )}
+
+          <WatchPanel
+            queryId={estimation.id}
+            version={version === ALL || version === UNKNOWN ? null : version}
+            gearbox={gearbox === ALL ? null : gearbox}
+          />
         </>
       )}
 
@@ -400,14 +417,14 @@ function formatKm(raw: string): string {
   return digits ? Number(digits).toLocaleString('fr-FR') : '';
 }
 
-function AdRow({ ad, note }: { ad: Ad; note?: string }) {
+function AdRow({ ad, note, action }: { ad: Ad; note?: string; action?: React.ReactNode }) {
   return (
-    <li>
+    <li className="flex items-center gap-3">
       <a
         href={ad.url}
         target="_blank"
         rel="noopener noreferrer"
-        className="flex items-center justify-between gap-3 py-2.5"
+        className="flex min-w-0 flex-1 items-center justify-between gap-3 py-2.5"
       >
         <div className="min-w-0">
           <div className="truncate text-[13px] text-zinc-200">{ad.title}</div>
@@ -428,6 +445,7 @@ function AdRow({ ad, note }: { ad: Ad; note?: string }) {
           {note && <div className="text-[11px] text-down">{note}</div>}
         </div>
       </a>
+      {action && <div className="shrink-0">{action}</div>}
     </li>
   );
 }

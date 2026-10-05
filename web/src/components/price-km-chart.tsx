@@ -64,6 +64,7 @@ export function PriceKmChart({
   colorBy = 'year',
   versionOrder = [],
   onPickVersion,
+  targetLabel = 'ta voiture',
 }: {
   points: KmPoint[];
   /** Médiane par tranche de km ; `version` à null pour l'ensemble affiché. */
@@ -72,6 +73,8 @@ export function PriceKmChart({
   colorBy?: ColorBy;
   versionOrder?: string[];
   onPickVersion?: (name: string) => void;
+  /** Ce que désigne le repère blanc : ta voiture, ou l'annonce négociée. */
+  targetLabel?: string;
 }) {
   // Ref de rappel : les écouteurs s'attachent à l'élément réellement monté.
   const [element, setElement] = useState<HTMLDivElement | null>(null);
@@ -470,7 +473,7 @@ export function PriceKmChart({
         {target && (
           <span className="flex items-center gap-1.5">
             <span className="inline-block h-2.5 w-2.5 rounded-full border-2 border-white" />
-            ta voiture
+            {targetLabel}
           </span>
         )}
         {flaggedCount > 0 && (

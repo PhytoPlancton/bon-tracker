@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { NotificationsToggle } from '@/components/notifications-toggle';
 import { useApi } from '@/lib/client';
 import { formatDateTime, relativeTime } from '@/lib/format';
 
@@ -90,6 +91,10 @@ export default function SettingsPage() {
       <header className="pb-4 pt-1">
         <h1 className="text-2xl font-semibold tracking-tight">Réglages</h1>
       </header>
+
+      <div className="mb-4">
+        <NotificationsToggle />
+      </div>
 
       <section className="mb-4 rounded-2xl border border-ink-line bg-ink-soft p-4">
         <div className="flex items-center justify-between">

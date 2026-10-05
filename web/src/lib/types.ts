@@ -91,6 +91,7 @@ export interface ScrapedListing {
   sellerType?: 'pro' | 'private' | null;
   location?: string | null;
   price: number | null;
+  publishedAt?: string | null;
   attributes?: Record<string, string>;
 }
 
@@ -115,6 +116,10 @@ export interface MarketAd {
   gearbox: string | null;
   brandCode: string | null;
   modelCode: string | null;
+  /** Première mise en ligne d'après le site ; à défaut, on se fie à firstSeenAt. */
+  publishedAt?: Date | null;
+  /** Prix successifs observés : c'est ce qui révèle un vendeur pressé. */
+  priceHistory?: { price: number; at: Date }[];
   firstSeenAt: Date;
   lastSeenAt: Date;
 }
@@ -159,4 +164,77 @@ export interface MarketQuery {
   /** Dernière nouvelle du collecteur : sans elle depuis trop longtemps, la collecte est morte. */
   updatedAt?: Date;
   collectedAt: Date | null;
+  /** Nature du relevé en cours : complet, ou seulement les dernières annonces. */
+  runMode?: 'full' | 'fresh';
+  /** Dernier relevé des nouveautés ; collectedAt reste celui du relevé complet. */
+  freshAt?: Date | null;
+}
+
+/**
+ * Veille : « préviens-moi quand une voiture comme celle-ci sort sous le
+ * marché ». Elle s'appuie sur une estimation, dont elle reprend les annonces.
+ */
+export interface Watch {
+  id: string;
+  uid: string;
+  queryId: string;
+  /** Clé du modèle surveillé : deux veilles sur le même modèle partagent un relevé. */
+  key: string;
+  label: string;
+  version: string | null;
+  gearbox: string | null;
+  kmMax: number | null;
+  priceMax: number | null;
+  /** Écart minimal sous les comparables, 0.12 pour 12 %. */
+  threshold: number;
+  active: boolean;
+  createdAt: Date;
+  checkedAt: Date | null;
+}
+
+export interface Alert {
+  id: string;
+  uid: string;
+  watchId: string;
+  lbcId: string;
+  title: string;
+  url: string;
+  imageUrl: string | null;
+  location: string | null;
+  price: number;
+  /** Médiane des comparables au moment de l'alerte. */
+  reference: number;
+  ratio: number;
+  comparables: number;
+  km: number | null;
+  year: number | null;
+  version: string | null;
+  /** Déjà en ligne à la création de la veille : listée, jamais notifiée. */
+  initial: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+  readAt: Date | null;
+}
+
+/** Abonnement d'un appareil aux notifications ; les clés restent chiffrées. */
+export interface PushSubscriptionRecord {
+  uid: string;
+  endpoint: string;
+  keys: Sealed;
+  userAgent: string | null;
+  createdAt: Date;
+}
+
+export type NegotiationStatus = 'reading' | 'collecting' | 'ready' | 'error';
+
+export interface Negotiation {
+  id: string;
+  uid: string;
+  lbcId: string;
+  url: string;
+  status: NegotiationStatus;
+  queryId: string | null;
+  error: string | null;
+  createdAt: Date;
+  updatedAt: Date;
 }

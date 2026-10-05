@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { isWorkerAuthorized } from '@/lib/auth';
+import { collections } from '@/lib/mongo';
 import { updateQueryProgress } from '@/lib/market-store';
+import { evaluateWatchesFor } from '@/lib/watch-store';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -12,6 +14,7 @@ const schema = z.object({
   ads: z.number().int().nonnegative().optional(),
   codes: z.object({ brand: z.string(), model: z.string() }).nullable().optional(),
   error: z.string().max(500).optional(),
+  mode: z.enum(['full', 'fresh']).optional(),
   activity: z
     .object({
       step: z.string().max(200),
@@ -42,6 +45,15 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
 
   const { id } = await context.params;
   const found = await updateQueryProgress(id, parsed.data);
+
+  // Un relevé terminé, c'est peut-être une affaire qui vient d'arriver :
+  // les veilles de ce modèle sont aussitôt appliquées.
+  if (found && parsed.data.status === 'done') {
+    const { marketQueries } = await collections();
+    const query = await marketQueries.findOne({ id }, { projection: { key: 1 } });
+    if (query) await evaluateWatchesFor(query.key).catch((error) => console.warn('[veille]', error));
+  }
+
   return found
     ? NextResponse.json({ ok: true })
     : NextResponse.json({ error: 'Collecte inconnue' }, { status: 404 });

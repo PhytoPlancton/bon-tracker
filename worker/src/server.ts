@@ -5,6 +5,7 @@ import { isRunning, log, runOnce } from './run.js';
 import { connectToChrome } from './browser.js';
 import { loginToLeboncoin } from './login.js';
 import { runMarketJob } from './market.js';
+import { readAdJob } from './read-ad.js';
 import { exclusive } from './queue.js';
 
 /**
@@ -48,10 +49,32 @@ export function startCommandServer(): void {
           reply(202, { queued: true });
           void exclusive(() =>
             runMarketJob(
-              { queryId, brand, model, yearMin: year(body.yearMin), yearMax: year(body.yearMax), codes },
+              {
+                queryId,
+                brand,
+                model,
+                yearMin: year(body.yearMin),
+                yearMax: year(body.yearMax),
+                codes,
+                mode: body.mode === 'fresh' ? 'fresh' : 'full',
+              },
               log,
             ),
           ).catch((cause) => log(`[marché] échec inattendu : ${String(cause)}`));
+        })
+        .catch(() => reply(400, { error: 'Requête illisible' }));
+    }
+
+    if (request.method === 'POST' && request.url === '/ad') {
+      return readJson(request)
+        .then((body) => {
+          const negotiationId = String(body.negotiationId ?? '');
+          const lbcId = String(body.lbcId ?? '');
+          if (!negotiationId || !/^\d{6,12}$/.test(lbcId)) return reply(400, { error: 'Annonce manquante' });
+          reply(202, { queued: true });
+          void exclusive(() => readAdJob({ negotiationId, lbcId }, log)).catch((cause) =>
+            log(`[négociation] échec inattendu : ${String(cause)}`),
+          );
         })
         .catch(() => reply(400, { error: 'Requête illisible' }));
     }

@@ -6,6 +6,21 @@ changement de prix** — pas un par relevé.
 
 Interface pensée pour le téléphone, installable sur l'écran d'accueil iOS.
 
+## Ce que fait l'application
+
+- **Suivi** : l'historique de prix de tes favoris et des recherches suivies.
+- **Marché** : la cote d'un modèle d'après toutes ses annonces — nuage prix /
+  km manipulable comme une carte, médiane par moteur, valeur de ta voiture
+  d'après ses comparables, annonces nettement sous le marché.
+- **Alertes** : une veille sur un modèle (moteur, boîte, km et budget max,
+  seuil de −10 à −20 %). Le modèle est relu toutes les deux heures en journée ;
+  une voiture qui sort sous ses comparables, ou qui baisse encore, arrive en
+  notification sur l'iPhone.
+- **Négocier** : colle le lien d'une annonce. La fiche donne le prix juste
+  d'après ses comparables, trois prix (ouverture, cible, plafond), des
+  arguments chiffrés (durée en ligne, baisses déjà consenties, comparables
+  moins chères) et un message prêt à envoyer au vendeur.
+
 ## Organisation
 
 ```
@@ -45,6 +60,10 @@ HEADLESS=false npm run dev   # même chose, mais en regardant le navigateur trav
 3. Remonte la liste des recherches sauvegardées du compte.
 4. Parcourt celles que tu as activées dans l'app.
 5. Écrit un point de prix **uniquement quand le prix a bougé**.
+6. Toutes les 20 minutes, demande à l'application quels modèles surveillés sont
+   dus (un par modèle, quel que soit le nombre de comptes qui le surveillent) :
+   les deux premières pages triées par date, un relevé complet une fois par
+   jour, rien entre 1 h et 7 h.
 
 Une annonce rattachée à plusieurs sources (favori *et* recherche) n'est retirée
 du tableau de bord que lorsqu'elle a disparu de toutes. Son historique, lui, est
@@ -59,6 +78,11 @@ conservé.
 - Session applicative : JWT signé, cookie `httpOnly` / `secure` / `sameSite=lax`.
 - Connexion limitée à 5 tentatives par quart d'heure.
 - Mongo et le collecteur ne publient aucun port ; seul le tunnel expose l'app.
+- Notifications : clés VAPID tirées une fois et rangées chiffrées en base ;
+  clés d'abonnement de chaque appareil chiffrées ; seules les adresses https
+  extérieures sont acceptées comme destinataires.
+- Négociation : seul le numéro d'une annonce est retenu d'un lien collé ; le
+  collecteur ne visite jamais une adresse fournie telle quelle.
 
 ## Limites connues
 

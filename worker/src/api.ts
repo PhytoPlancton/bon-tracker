@@ -9,6 +9,8 @@ export interface ScrapedListing {
   sellerType?: 'pro' | 'private' | null;
   location?: string | null;
   price: number | null;
+  /** Première mise en ligne, telle que le site la date (« 2026-09-12 08:41:07 »). */
+  publishedAt?: string | null;
   /**
    * Caractéristiques telles que le site les publie : puissance, année,
    * kilométrage, boîte. Relevées sans présumer lesquelles existent — c'est
@@ -131,6 +133,7 @@ export interface MarketActivity {
 
 export interface MarketQueryPatch {
   activity?: MarketActivity;
+  mode?: 'full' | 'fresh';
   status?: 'running' | 'done' | 'error';
   pages?: number;
   ads?: number;
@@ -163,5 +166,28 @@ export function abandonMarketQueries(before: Date) {
   return call<{ ok: boolean; abandoned: number }>('/api/internal/market/abandon', {
     method: 'POST',
     body: JSON.stringify({ before: before.toISOString() }),
+  });
+}
+
+/** Modèles surveillés à relever maintenant, que l'application réserve pour nous. */
+export function claimDueMarket() {
+  return call<{
+    jobs: {
+      queryId: string;
+      brand: string;
+      model: string;
+      yearMin: number | null;
+      yearMax: number | null;
+      codes: { brand: string; model: string } | null;
+      mode: 'full' | 'fresh';
+    }[];
+  }>('/api/internal/market/claim', { method: 'POST', body: '{}' });
+}
+
+/** L'annonce lue pour une négociation, ou ce qui a empêché de la lire. */
+export function reportAd(negotiationId: string, ad: ScrapedListing | null, error: string | null) {
+  return call<{ ok: boolean }>(`/api/internal/negotiations/${encodeURIComponent(negotiationId)}`, {
+    method: 'POST',
+    body: JSON.stringify({ ad, error }),
   });
 }

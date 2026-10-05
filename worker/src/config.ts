@@ -21,6 +21,13 @@ export const config = {
   /** Toutes les 6 h par défaut, décalé pour éviter les heures rondes. */
   schedule: process.env.CRON_SCHEDULE || '17 */6 * * *',
   runOnStart: process.env.RUN_ON_START === 'true',
+  /**
+   * Passage sur les modèles surveillés. L'application décide lesquels sont
+   * dus (toutes les 2 h environ) : ce rythme ne fait que lui demander.
+   */
+  marketSchedule: process.env.MARKET_SCHEDULE || '*/20 * * * *',
+  /** Personne ne parcourt les annonces à 4 h du matin : le collecteur non plus. */
+  quietHours: { from: Number(process.env.QUIET_FROM ?? 1), to: Number(process.env.QUIET_TO ?? 7) },
   /** Port du serveur de commandes, joignable seulement depuis le réseau Docker. */
   commandPort: Number(process.env.WORKER_PORT || 3001),
   /** Pause entre deux pages, pour ne pas marteler le site. */

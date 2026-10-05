@@ -1,6 +1,8 @@
 import cron from 'node-cron';
-import { abandonMarketQueries } from './api.js';
+import { abandonMarketQueries, claimDueMarket } from './api.js';
 import { config } from './config.js';
+import { runMarketJob } from './market.js';
+import { exclusive } from './queue.js';
 import { log, runOnce } from './run.js';
 import { startCommandServer } from './server.js';
 
@@ -19,6 +21,10 @@ async function main(): Promise<void> {
     void runOnce();
   });
 
+  cron.schedule(config.marketSchedule, () => {
+    void watchMarkets();
+  });
+
   if (config.runOnStart) void runOnce();
 
   for (const signal of ['SIGTERM', 'SIGINT'] as const) {
@@ -26,6 +32,33 @@ async function main(): Promise<void> {
       log(`${signal} reçu, arrêt`);
       process.exit(0);
     });
+  }
+}
+
+/**
+ * Relève les modèles que des veilles surveillent. L'application choisit
+ * lesquels sont dus et les réserve, pour qu'un passage suivant ne les reprenne
+ * pas pendant qu'ils attendent leur tour dans la file.
+ */
+async function watchMarkets(): Promise<void> {
+  // Heure de Paris quel que soit le fuseau du container.
+  const hour =
+    Number(
+      new Intl.DateTimeFormat('fr-FR', { hour: 'numeric', hour12: false, timeZone: 'Europe/Paris' }).format(new Date()),
+    ) % 24;
+  const { from, to } = config.quietHours;
+  if (from < to ? hour >= from && hour < to : hour >= from || hour < to) return;
+
+  try {
+    const { jobs } = await claimDueMarket();
+    for (const job of jobs) {
+      log(`[veille] ${job.brand} ${job.model} : relevé ${job.mode === 'fresh' ? 'des nouveautés' : 'complet'}`);
+      void exclusive(() => runMarketJob(job, log)).catch((cause) =>
+        log(`[veille] échec inattendu : ${String(cause)}`),
+      );
+    }
+  } catch (cause) {
+    log(`[veille] application injoignable : ${cause instanceof Error ? cause.message : String(cause)}`);
   }
 }
 

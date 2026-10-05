@@ -81,6 +81,17 @@ export default function MarketPage() {
         </p>
       </header>
 
+      <Link
+        href="/negocier"
+        className="mb-3 flex items-center justify-between gap-3 rounded-2xl border border-accent/40 bg-accent/10 px-4 py-3 active:bg-accent/20"
+      >
+        <span>
+          <span className="block text-[14px] font-medium text-zinc-100">Négocier une annonce</span>
+          <span className="block text-[11px] text-zinc-400">Colle un lien : juste prix, offre à faire, arguments.</span>
+        </span>
+        <span className="text-accent">›</span>
+      </Link>
+
       <form onSubmit={submit} className="space-y-3 rounded-2xl border border-ink-line bg-ink-soft p-4">
         <div className="grid grid-cols-2 gap-3">
           <Field label="Marque">

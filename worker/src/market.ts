@@ -13,7 +13,15 @@ export interface MarketSpec {
   yearMax: number | null;
   /** Codes du site pour ce modèle, s'ils ont déjà été établis. */
   codes: { brand: string; model: string } | null;
+  /**
+   * « full » relit tout le modèle ; « fresh » ne lit que les annonces les plus
+   * récentes, pour repérer vite une nouvelle affaire sans tout reparcourir.
+   */
+  mode?: 'full' | 'fresh';
 }
+
+/** Les plus récentes tiennent sur deux pages entre deux passages. */
+const FRESH_PAGES = 2;
 
 /** Au-delà, une recherche couvre déjà plusieurs centaines d'annonces. */
 const MAX_PAGES = 20;
@@ -37,7 +45,9 @@ const JOB_TIMEOUT_MS = 8 * 60 * 1000;
  */
 export async function runMarketJob(spec: MarketSpec, log: (message: string) => void): Promise<void> {
   const label = `${spec.brand} ${spec.model}`.trim();
-  await updateMarketQuery(spec.queryId, { status: 'running', pages: 0, ads: 0 });
+  const mode = spec.mode ?? 'full';
+  const maxPages = mode === 'fresh' ? FRESH_PAGES : MAX_PAGES;
+  await updateMarketQuery(spec.queryId, { status: 'running', pages: 0, ads: 0, mode });
 
   log(`[marché] ${label} : ouverture de la recherche`);
   const say = (step: string, extra: Partial<MarketActivity> = {}) =>
@@ -66,7 +76,7 @@ export async function runMarketJob(spec: MarketSpec, log: (message: string) => v
 
     let codes = spec.codes;
     await say(codes ? `Recherche des ${label} sur leboncoin` : `Recherche de « ${label} » sur leboncoin`);
-    let first = await collectListings(page, searchUrl(spec, codes, 1));
+    let first = await collectListings(page, searchUrl(spec, codes, 1, mode));
 
     if (!codes) {
       codes = resolveCodes(first, spec.model);
@@ -76,7 +86,7 @@ export async function runMarketJob(spec: MarketSpec, log: (message: string) => v
           recent: preview(first),
         });
         await pause();
-        first = await collectListings(page, searchUrl(spec, codes, 1));
+        first = await collectListings(page, searchUrl(spec, codes, 1, mode));
       } else {
         log(`[marché] ${label} : codes introuvables, recherche libre`);
       }
@@ -92,10 +102,10 @@ export async function runMarketJob(spec: MarketSpec, log: (message: string) => v
       activity: { step: `Page 1 lue · ${first.length} annonces`, recent: preview(first), total },
     });
 
-    for (let number = 2; number <= MAX_PAGES; number += 1) {
+    for (let number = 2; number <= maxPages; number += 1) {
       await pause();
       const before = all.size;
-      const found = await collectListings(page, searchUrl(spec, codes, number));
+      const found = await collectListings(page, searchUrl(spec, codes, number, mode));
       const fresh = found.filter((ad) => !all.has(ad.lbcId));
       add(all, found);
       const gained = all.size - before;
@@ -142,8 +152,15 @@ function searchUrl(
   spec: MarketSpec,
   codes: { brand: string; model: string } | null,
   page: number,
+  mode: 'full' | 'fresh',
 ): string {
   const params = new URLSearchParams({ category: '2' });
+  // Un relevé frais veut les dernières arrivées en tête, quel que soit le tri
+  // que le site propose par défaut.
+  if (mode === 'fresh') {
+    params.set('sort', 'time');
+    params.set('order', 'desc');
+  }
   if (codes) {
     params.set('u_car_brand', codes.brand);
     params.set('u_car_model', codes.model);

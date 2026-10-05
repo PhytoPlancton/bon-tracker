@@ -1,17 +1,20 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
 const TABS = [
   { href: '/', label: 'Suivi', icon: ChartIcon },
   { href: '/marche', label: 'Marché', icon: MarketIcon },
+  { href: '/alertes', label: 'Alertes', icon: BellIcon },
   { href: '/recherches', label: 'Recherches', icon: SearchIcon },
   { href: '/reglages', label: 'Réglages', icon: GearIcon },
 ];
 
 export function BottomNav() {
   const pathname = usePathname();
+  const unread = useUnreadAlerts(pathname);
 
   return (
     <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-ink-line bg-ink/90 backdrop-blur-xl">
@@ -26,7 +29,14 @@ export function BottomNav() {
                 active ? 'text-accent' : 'text-zinc-500'
               }`}
             >
-              <Icon active={active} />
+              <span className="relative">
+                <Icon active={active} />
+                {href === '/alertes' && unread > 0 && (
+                  <span className="absolute -right-2 -top-1 min-w-[16px] rounded-full bg-accent px-1 text-center text-[10px] font-semibold leading-4 text-black">
+                    {unread > 9 ? '9+' : unread}
+                  </span>
+                )}
+              </span>
               {label}
             </Link>
           );
@@ -55,6 +65,37 @@ function MarketIcon({ active }: { active: boolean }) {
       <circle cx="10.5" cy="8.5" r="1.9" fill="currentColor" stroke="none" />
       <circle cx="14" cy="15" r="1.9" fill="currentColor" stroke="none" />
       <circle cx="18.5" cy="10.5" r="1.9" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+/** Non-lues, relues à chaque changement de page : assez frais, sans interroger en boucle. */
+function useUnreadAlerts(pathname: string): number {
+  const [unread, setUnread] = useState(0);
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/alerts?compter=1', { cache: 'no-store' })
+      .then((response) => (response.ok ? response.json() : { unread: 0 }))
+      .then((body: { unread?: number }) => {
+        if (!cancelled) setUnread(body.unread ?? 0);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [pathname]);
+  return unread;
+}
+
+function BellIcon({ active }: { active: boolean }) {
+  return (
+    <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" strokeWidth={active ? 2.2 : 1.8}>
+      <path
+        d="M6 16.5V11a6 6 0 1 1 12 0v5.5l1.5 1.5h-15L6 16.5Z"
+        stroke="currentColor"
+        strokeLinejoin="round"
+      />
+      <path d="M10 20.5a2.2 2.2 0 0 0 4 0" stroke="currentColor" strokeLinecap="round" />
     </svg>
   );
 }

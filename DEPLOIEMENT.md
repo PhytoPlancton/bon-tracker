@@ -112,6 +112,17 @@ Safari → `https://bontracker.nmt.ovh` → se connecter → **Partager** →
 > Cette étape n'a jamais fonctionné en `http://` : iOS n'installe une app web que
 > depuis une origine sécurisée. C'est la raison d'être du tunnel.
 
+### Notifications des alertes
+
+Elles ne marchent que dans l'app installée (iOS 16.4 ou plus récent) :
+
+1. Ouvrir Bon Tracker **depuis l'icône de l'écran d'accueil**, pas depuis Safari.
+2. Onglet **Alertes** (ou Réglages) → **Activer les notifications** → Autoriser.
+3. Une notification d'essai arrive dans la seconde.
+
+Rien à configurer côté PC : les clés de signature sont générées au premier
+usage et rangées chiffrées dans la base.
+
 ---
 
 ## Exploitation

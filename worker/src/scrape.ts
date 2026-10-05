@@ -77,6 +77,7 @@ function merge(a: ScrapedListing | undefined, b: ScrapedListing): ScrapedListing
     category: a.category ?? b.category,
     sellerType: a.sellerType ?? b.sellerType,
     location: a.location ?? b.location,
+    publishedAt: a.publishedAt ?? b.publishedAt,
     attributes:
       a.attributes || b.attributes ? { ...(b.attributes ?? {}), ...(a.attributes ?? {}) } : undefined,
   };
@@ -214,6 +215,7 @@ function harvest(node: unknown, accumulator: ScrapedListing[] = []): ScrapedList
         category: typeof record.category_name === 'string' ? record.category_name : null,
         sellerType: extractSellerType(record),
         location: extractLocation(record),
+        publishedAt: extractPublication(record),
         attributes: extractAttributes(record),
       });
     }
@@ -297,6 +299,16 @@ function extractImage(record: Record<string, unknown>): string | null {
     if (typeof images.thumb_url === 'string') return images.thumb_url;
   }
   return typeof record.image_url === 'string' ? record.image_url : null;
+}
+
+/**
+ * Date de première mise en ligne. C'est elle, et non le jour où on a vu
+ * l'annonce pour la première fois, qui dit depuis combien de temps une
+ * voiture cherche preneur.
+ */
+function extractPublication(record: Record<string, unknown>): string | null {
+  const value = record.first_publication_date ?? record.firstPublicationDate;
+  return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}/.test(value) ? value.slice(0, 19) : null;
 }
 
 function extractSellerType(record: Record<string, unknown>): 'pro' | 'private' | null {

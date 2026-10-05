@@ -109,5 +109,37 @@ Remplace la lecture par segment : on choisit une voiture, on voit ce qu'elle vau
       lues qui défilent
 - [x] Médiane par moteur ; pas d'« affaire » sans moteur connu
 
+## Alertes et négociation (2026-10-05)
+Objectif : une raison d'ouvrir l'app chaque jour — être prévenu le premier
+d'une bonne affaire, et arriver armé pour la négocier.
+
+### Fondations
+- [x] Date de publication de chaque annonce, historique de ses prix sur le marché
+- [x] Relevé « frais » : 2 premières pages (les plus récentes) d'un modèle
+      surveillé, fusionnées sans effacer le reste ; relevé complet une fois par jour
+- [x] Planification côté collecteur : modèles surveillés toutes les 2 h,
+      jamais la nuit (1 h – 7 h), une collecte à la fois
+### Alertes
+- [x] Veille sur une estimation : moteur, boîte, km max, prix max, seuil (10/15/20 %)
+- [x] À chaque relevé : annonces sous leurs comparables → alerte ; à la création,
+      les affaires déjà en ligne sont listées sans notification
+- [x] Nouvelle baisse d'une annonce déjà signalée → nouvelle notification
+- [x] Notifications iPhone (Web Push, clés VAPID générées et chiffrées en base)
+- [x] Page Alertes : fil des affaires, veilles (pause / suppression), activation
+      des notifications, onglet avec pastille de non-lus
+### Négociation
+- [x] Coller le lien d'une annonce ; si elle est inconnue, le collecteur la lit,
+      puis relève son modèle
+- [x] Fiche : prix juste (comparables), offre d'ouverture / cible / plafond,
+      arguments chiffrés, durée en ligne, baisses, 3 comparables moins chères,
+      message prêt à copier
+- [x] Accès depuis les affaires, les alertes et les annonces suivies
+### Vérification
+- [x] Tests de bout en bout (alertes avec faux service de notification,
+      négociation annonce connue / inconnue, cloisonnement)
+- [x] Contrôle visuel mobile, documentation, commit, push
+- [ ] Éprouver sur le PC : notifications sur l'iPhone installé, lecture d'une
+      annonce réelle, premier relevé de nouveautés planifié
+
 ## Hors scope V1
-Alertes e-mail/Telegram, multi-utilisateur, application native.
+E-mail/Telegram, application native.

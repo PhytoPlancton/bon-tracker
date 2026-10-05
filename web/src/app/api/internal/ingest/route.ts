@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { isWorkerAuthorized } from '@/lib/auth';
+import { ingestMarketAds } from '@/lib/market-store';
 import { ingestListings } from '@/lib/repo';
 import type { ListingSource } from '@/lib/types';
 
@@ -17,6 +18,7 @@ const listingSchema = z.object({
   location: z.string().nullable().optional(),
   // Au-delà, c'est une valeur mal lue, pas un prix d'annonce.
   price: z.number().int().positive().max(5_000_000).nullable(),
+  publishedAt: z.string().max(40).nullable().optional(),
   attributes: z.record(z.string().max(80)).optional(),
 });
 
@@ -41,6 +43,11 @@ export async function POST(request: Request) {
     parsed.data.source as ListingSource,
     parsed.data.listings.map((item) => ({ ...item, price: item.price })),
   );
+
+  // Une annonce suivie est aussi une annonce du marché, publique : versée
+  // dans la base commune, elle a déjà ses caractéristiques et son historique
+  // le jour où l'on veut la négocier.
+  await ingestMarketAds(null, parsed.data.listings);
 
   return NextResponse.json(result);
 }

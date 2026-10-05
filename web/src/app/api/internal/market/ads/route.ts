@@ -16,11 +16,14 @@ const adSchema = z.object({
   location: z.string().nullable().optional(),
   // Au-delà, c'est une valeur mal lue, pas un prix d'annonce.
   price: z.number().int().positive().max(5_000_000).nullable(),
+  publishedAt: z.string().max(40).nullable().optional(),
   attributes: z.record(z.string().max(120)).optional(),
 });
 
 const schema = z.object({
-  queryId: z.string().min(1),
+  // Absente quand l'annonce n'appartient à aucune collecte : lue pour une
+  // négociation, ou venue des favoris.
+  queryId: z.string().min(1).nullable(),
   ads: z.array(adSchema).max(500),
 });
 

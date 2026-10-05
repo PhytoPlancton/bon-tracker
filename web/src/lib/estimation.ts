@@ -28,6 +28,8 @@ export interface Ad {
   versionGuessed?: boolean;
   /** Ce qui rend l'annonce incomparable : volant à droite, accident, panne. */
   flags?: string[];
+  /** Mise en ligne d'après le site, ou à défaut première fois vue. */
+  onlineSince?: Date | string | null;
 }
 
 /** Sous ce prix, c'est une pièce, une épave ou un prix d'appel. */
