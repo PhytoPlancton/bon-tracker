@@ -177,6 +177,10 @@ export async function ingestMarketAds(queryId: string | null, scraped: ScrapedLi
         location: ad.location ?? null,
         sellerType: ad.sellerType ?? null,
         publishedAt,
+        description: ad.body?.trim() || null,
+        attributes: ad.attributes && Object.keys(ad.attributes).length ? ad.attributes : null,
+        lat: typeof ad.lat === 'number' ? ad.lat : null,
+        lng: typeof ad.lng === 'number' ? ad.lng : null,
         ...specs,
       }).filter(([, value]) => value !== null && value !== undefined),
     );
@@ -269,7 +273,7 @@ export async function loadAds(ids: string[]): Promise<Ad[]> {
   return docs.map(toAd);
 }
 
-function toAd(doc: MarketAd): Ad {
+export function toAd(doc: MarketAd): Ad {
   return {
     lbcId: doc.lbcId,
     title: doc.title,

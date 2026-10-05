@@ -135,6 +135,17 @@ Un second domaine dans la même app, bien séparé : on bascule dans les réglag
       leboncoin (worker/tests/collecte.mjs)
 - [ ] Éprouver sur leboncoin réel : forme du lieu retenue, clés `square`,
       `rooms`, `real_estate_type`, `energy_rate` présentes
+## Export CSV (2026-10-05)
+- [x] Annonces d'une estimation en CSV : prix et historique, baisses, durée en
+      ligne, km/an, motorisation (harmonisée et publiée), boîte, vendeur,
+      localisation, comparables et écart, statut, toutes les caractéristiques
+      publiées, description du vendeur
+- [x] Synthèse par motorisation et par boîte : médiane, quartiles, extrêmes,
+      km, années, durée en ligne, part de pros, décote pour 10 000 km
+- [x] Description et caractéristiques désormais gardées pour le marché auto
+- [x] Consigne prête à coller dans ChatGPT avec le fichier
+- [x] 39 vérifications (tests/export.mjs)
+
 ## Fusion (2026-10-05)
 - [x] Branche immobilier réunie à `main` : cycle de vie commun des collectes
       étendu au relevé des nouveautés, graphique générique, barre du bas par

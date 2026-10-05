@@ -97,6 +97,10 @@ export interface ScrapedListing {
   price: number | null;
   publishedAt?: string | null;
   attributes?: Record<string, string>;
+  /** Description du vendeur. */
+  body?: string | null;
+  lat?: number | null;
+  lng?: number | null;
 }
 
 /**
@@ -124,6 +128,12 @@ export interface MarketAd {
   publishedAt?: Date | null;
   /** Prix successifs observés : c'est ce qui révèle un vendeur pressé. */
   priceHistory?: { price: number; at: Date }[];
+  /** Description du vendeur, telle que publiée (tronquée à 1 500 caractères). */
+  description?: string | null;
+  /** Toutes les caractéristiques publiées, valeurs et libellés (« fuel_label »). */
+  attributes?: Record<string, string>;
+  lat?: number | null;
+  lng?: number | null;
   firstSeenAt: Date;
   lastSeenAt: Date;
 }

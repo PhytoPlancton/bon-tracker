@@ -18,6 +18,10 @@ const adSchema = z.object({
   price: z.number().int().positive().max(5_000_000).nullable(),
   publishedAt: z.string().max(40).nullable().optional(),
   attributes: z.record(z.string().max(120)).optional(),
+  // Description du vendeur : entretien, options, défauts. Gardée pour l'export.
+  body: z.string().max(2000).nullable().optional(),
+  lat: z.number().min(-90).max(90).nullable().optional(),
+  lng: z.number().min(-180).max(180).nullable().optional(),
 });
 
 const schema = z.object({

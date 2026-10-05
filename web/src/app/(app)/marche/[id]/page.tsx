@@ -8,6 +8,7 @@ import { NegotiateButton } from '@/components/negotiate-button';
 import { ConfirmButton } from '@/components/confirm-button';
 import { PriceKmChart, type ColorBy } from '@/components/price-km-chart';
 import { WatchPanel } from '@/components/watch-panel';
+import { ExportPanel } from '@/components/export-panel';
 import { useApi } from '@/lib/client';
 import { analyze, estimate, plausible, type Ad } from '@/lib/estimation';
 import { formatPrice, relativeTime, criteriaLabel } from '@/lib/format';
@@ -399,6 +400,8 @@ export default function EstimationPage({ params }: { params: Promise<{ id: strin
             version={version === ALL || version === UNKNOWN ? null : version}
             gearbox={gearbox === ALL ? null : gearbox}
           />
+
+          <ExportPanel id={estimation.id} label={`${estimation.brand} ${estimation.model}, ${criteriaLabel(estimation)}`} />
         </>
       )}
 

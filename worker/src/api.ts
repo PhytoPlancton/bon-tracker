@@ -97,8 +97,9 @@ export function ingest(uid: string, source: string, listings: ScrapedListing[]) 
 }
 
 /**
- * La description ne sert qu'au marché immobilier, qui y lit viagers et
- * enchères : ailleurs, elle alourdirait l'envoi pour rien.
+ * Les favoris n'ont pas l'usage de la description : elle alourdirait l'envoi
+ * pour rien. Le marché, lui, la garde — elle dit l'entretien, les options,
+ * les défauts, et part avec l'export.
  */
 function withoutBody({ body: _body, ...listing }: ScrapedListing): ScrapedListing {
   return listing;
@@ -181,7 +182,7 @@ export function ingestImmoAds(queryId: string, ads: ScrapedListing[]) {
 export function ingestMarketAds(queryId: string, ads: ScrapedListing[]) {
   return call<{ ok: boolean }>('/api/internal/market/ads', {
     method: 'POST',
-    body: JSON.stringify({ queryId, ads: ads.map(withoutBody) }),
+    body: JSON.stringify({ queryId, ads }),
   });
 }
 
