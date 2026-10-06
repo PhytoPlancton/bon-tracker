@@ -10,7 +10,25 @@ import { consentBannerVisible, dismissCookieBanner } from './browser.js';
  *  2. à défaut, une lecture du DOM.
  * Garder les deux évite qu'une refonte visuelle du site fasse taire la collecte.
  */
+/**
+ * Lit une page de résultats (ou d'annonce). Une page qui se recharge pendant
+ * la lecture — redirection, rafraîchissement du site — détruit le contexte en
+ * cours : on la relit une fois plutôt que de faire échouer toute la collecte.
+ */
 export async function collectListings(page: Page, url: string): Promise<ScrapedListing[]> {
+  try {
+    return await readListings(page, url);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!/Execution context was destroyed|navigation|Navigation|frame was detached/i.test(message) || page.isClosed()) {
+      throw error;
+    }
+    await page.waitForTimeout(2_000);
+    return readListings(page, url);
+  }
+}
+
+async function readListings(page: Page, url: string): Promise<ScrapedListing[]> {
   const found = new Map<string, ScrapedListing>();
 
   const onResponse = async (response: Response) => {

@@ -79,13 +79,18 @@ try {
   const forbidden = await raw('POST', `/api/internal/negotiations/${unknown.id}`, { 'content-type': 'application/json' }, { ad: null });
   check('route interne fermée sans jeton', forbidden.status === 403, forbidden.status);
   await call('POST', `/api/internal/negotiations/${unknown.id}`, worker, {
-    ad: listing(3_600_000_001, 'Boxster 3.2 S', 2003, 80_000, 24_500, { sellerType: 'pro' }),
+    ad: listing(3_600_000_001, 'Boxster 3.2 S', 2003, 80_000, 24_500, {
+      sellerType: 'pro',
+      title: 'Porsche Boxster S 3.2 252ch',
+    }),
   });
   // 2003 → 2001–2005 : une autre plage d'années, dont la cote reste à relever.
   const reading = await call('GET', `/api/negociations/${unknown.id}`, alice);
   const job = jobs.market.at(-1);
   check('annonce lue, cote de son modèle demandée', reading.negotiation.status === 'collecting' && job.yearMin === 2001 && job.yearMax === 2005, { status: reading.negotiation.status, job });
   check('avec les codes lus sur l’annonce, sans recherche libre', job?.codes?.model === 'PORSCHE_Boxster', job);
+  // 252 ch lus dans le titre : seules les voitures de 231 à 273 ch comptent.
+  check('même puissance à 8 % près', job?.powerMin === 231 && job?.powerMax === 273, job);
   check('fiche en attente de la cote', reading.sheet === null && reading.query?.id === job.queryId, reading.query);
   await collect(stack, job.queryId, market());
   const read = await call('GET', `/api/negociations/${unknown.id}`, alice);

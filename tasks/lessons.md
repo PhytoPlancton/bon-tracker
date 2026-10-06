@@ -167,6 +167,9 @@ Format : [date] | ce qui a mal tourné | règle pour l'éviter
 - [2026-10-06] | Deux annonces à prix d'arnaque, gardées comme comparables, faisaient tomber la valeur d'une voiture voisine de 20 000 à 11 600 €. |
   Un prix suspect ne sert de référence à personne ; il reste visible et signalé. Le tri se fait au même endroit pour tous les calculs, côté serveur, pas dans un écran.
 
+- [2026-10-06] | La négociation d'une BMW 125i (218 ch) a lancé la cote de « BMW Série 1 » entière : 2 151 annonces, du 116i au 118d, une collecte interminable qui a fini par échouer sur un rechargement de page. |
+  Une cote se calcule sur des voitures comparables dès la recherche : même modèle, années voisines, même puissance. Et un incident ponctuel de page se relit, il ne fait pas tomber toute une collecte.
+
 ## Règles permanentes du projet
 - Un seul client MongoDB, `maxPoolSize` bas : le quota de 500 connexions est
   partagé entre plusieurs applications.

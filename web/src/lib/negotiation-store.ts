@@ -73,8 +73,10 @@ async function attach(negotiation: Negotiation, ad: MarketAd): Promise<StartOutc
     // déborder sur une autre génération dans la plupart des cas.
     yearMin: ad.year! - 2,
     yearMax: ad.year! + 2,
-    powerMin: null,
-    powerMax: null,
+    // Même puissance à 8 % près : une 125i de 218 ch ne se compare ni à une
+    // 118d ni à une 130i. C'est aussi ce qui garde la collecte courte — le
+    // modèle entier compte souvent des milliers d'annonces.
+    ...powerRange(ad),
     codes: { brand: ad.brandCode!, model: ad.modelCode! },
   });
 
@@ -85,6 +87,26 @@ async function attach(negotiation: Negotiation, ad: MarketAd): Promise<StartOutc
   const update = { status, queryId: outcome.query.id, error: null, updatedAt: new Date() } as const;
   await negotiations.updateOne({ id: negotiation.id }, { $set: update });
   return { kind: 'ok', negotiation: { ...negotiation, ...update } };
+}
+
+/** Puissance DIN de l'annonce : déclarée, sinon lue dans sa version ou son titre (« 218ch »). */
+export function powerOf(ad: Pick<MarketAd, 'attributes' | 'version' | 'title'>): number | null {
+  const declared = Number(String(ad.attributes?.horse_power_din ?? '').replace(/\D/g, ''));
+  if (declared >= 40 && declared <= 1_500) return declared;
+  // « ch » seulement : « cv » désigne souvent les chevaux fiscaux.
+  for (const text of [ad.version, ad.title]) {
+    const match = text?.match(/(\d{2,4})\s?ch\b/i);
+    const value = match ? Number(match[1]) : 0;
+    if (value >= 40 && value <= 1_500) return value;
+  }
+  return null;
+}
+
+function powerRange(ad: MarketAd): { powerMin: number | null; powerMax: number | null } {
+  const power = powerOf(ad);
+  return power
+    ? { powerMin: Math.floor(power * 0.92), powerMax: Math.ceil(power * 1.08) }
+    : { powerMin: null, powerMax: null };
 }
 
 async function fail(negotiation: Negotiation, message: string): Promise<StartOutcome> {
