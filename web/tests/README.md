@@ -1,6 +1,6 @@
 # Tests
 
-Onze scénarios, exécutés contre un MongoDB éphémère et le serveur réellement
+Douze scénarios, exécutés contre un MongoDB éphémère et le serveur réellement
 compilé — pas des simulacres.
 
 ```bash
@@ -23,6 +23,7 @@ généré par `openssl`).
 | `export.mjs` | L'export CSV d'une estimation se lit tel quel : séparateur « ; », marque d'ordre des octets, guillemets ; une ligne par annonce avec comparables, écart, baisses datées, durée en ligne, caractéristiques publiées et description ; annonces écartées ou à risque exportées avec leur raison ; synthèse par motorisation (médianes, quartiles, décote pour 10 000 km) ; cloisonnement. |
 | `cote.mjs` | La cote se photographie à chaque relevé (une par jour) ; une annonce n'est déclarée partie qu'après un relevé complet — jamais sur un relevé partiel, nettement plus court ou de nouveautés — et redevient en ligne si elle revient ; signaux (republication chiffrée, prix anormalement bas, kilométrage trop faible, description) dans l'estimation, l'export et la fiche de négociation, descriptions gardées au serveur. |
 | `vente.ts` | « Pour la vendre » : trois prix ronds et croissants tirés des comparables ; durées tirées des annonces parties, à défaut de celles encore en ligne (et dit) ; autre motorisation ignorée ; silence faute de comparables. Test unitaire, lancé par `tsx`. |
+| `moteurs.ts` | Des voitures se comparent par moteur (carburant et puissance à 8 % près), pas par libellé de version : une 125i essence de 218 ch ne se compare ni aux 118d ni aux 123d diesel ; jamais de mélange, même faute de comparables. Test unitaire, lancé par `tsx`. |
 | `connexion.mjs` | Une adresse sans compte est dite comme telle ; un mot de passe changé sur leboncoin est accepté après vérification auprès du site ; une adresse suivie d'une espace passe ; chaque visiteur a son propre compteur de tentatives. |
 | `immo.mjs` | Bon Tracker Immo : bascule de mode, données auto et immo séparées, recherche de commune (référentiel en panne compris), prix au m², pièces, décote des passoires, affaires, valeur d'un bien donné, rendement face aux loyers, réutilisation, arrêt, cloisonnement. |
 

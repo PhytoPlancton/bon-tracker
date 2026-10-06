@@ -15,7 +15,7 @@
  *
  * Fonctions pures, utilisables côté client.
  */
-import { estimate, type Ad, type Estimate, type Target } from './estimation';
+import { estimate, sameEngine as sameEngineAs, type Ad, type Estimate, type Target } from './estimation';
 
 export type Tier = 'fast' | 'market' | 'patient';
 
@@ -58,12 +58,12 @@ export function sellingAdvice(
   // Chaque annonce, partie ou en ligne, est située face à ses propres comparables.
   const place = (ad: Ad) => {
     if (ad.km === null || ad.year === null) return null;
-    const own = estimate({ km: ad.km, year: ad.year, version: ad.version }, live, ad.lbcId);
+    const own = estimate(ad, live, ad.lbcId);
     return own ? tierOf((ad.price - own.median) / own.median) : null;
   };
 
-  // Seules comptent les annonces de la même motorisation que la voiture à vendre.
-  const sameEngine = (ad: Ad) => !target.version || ad.version === target.version;
+  // Seules comptent les annonces du même moteur que la voiture à vendre.
+  const sameEngine = (ad: Ad) => sameEngineAs(target, ad);
   const goneByTier = new Map<Tier, number[]>();
   for (const ad of gone.filter(sameEngine)) {
     const tier = place(ad);

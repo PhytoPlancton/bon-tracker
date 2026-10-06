@@ -136,7 +136,7 @@ export function dealsFor(
     if (watch.kmMax && ad.km > watch.kmMax) continue;
     if (watch.priceMax && ad.price > watch.priceMax) continue;
 
-    const peers = estimate({ km: ad.km, year: ad.year, version: ad.version }, pool, ad.lbcId);
+    const peers = estimate(ad, pool, ad.lbcId);
     if (!peers || !peers.tolerance.sameVersion) continue;
     const ratio = (peers.median - ad.price) / peers.median;
     if (ratio >= watch.threshold) {

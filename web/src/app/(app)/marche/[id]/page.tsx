@@ -14,7 +14,7 @@ import { sellingAdvice } from '@/lib/selling';
 import type { Signal } from '@/lib/signals';
 import { ExportPanel } from '@/components/export-panel';
 import { useApi } from '@/lib/client';
-import { analyze, estimate, plausible, type Ad } from '@/lib/estimation';
+import { analyze, estimate, plausible, powerFrom, type Ad } from '@/lib/estimation';
 import { formatPrice, relativeTime, criteriaLabel } from '@/lib/format';
 
 interface Detail {
@@ -132,7 +132,9 @@ export default function EstimationPage({ params }: { params: Promise<{ id: strin
     const kmValue = Number(km.replace(/\D/g, '')) || null;
     const yearValue = Number(year) >= 1900 ? Number(year) : null;
     if ((kmValue === null && yearValue === null) || needsEngine) return null;
-    return { km: kmValue, year: yearValue, version: carEngine };
+    // La puissance du moteur choisi, lue dans son libellé : c'est elle qui
+    // rapproche les versions d'un même moteur, quelle que soit la finition.
+    return { km: kmValue, year: yearValue, version: carEngine, power: powerFrom(null, carEngine) };
   }, [km, year, carEngine, needsEngine]);
 
   const valuation = useMemo(() => (target ? estimate(target, kept) : null), [target, kept]);

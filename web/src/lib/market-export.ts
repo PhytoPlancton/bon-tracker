@@ -13,7 +13,7 @@
  * Séparateur « ; » et marque d'ordre des octets : un tableur français ouvre le
  * fichier tel quel, et les outils d'analyse le lisent sans réglage.
  */
-import { engineOf, estimate, plausible, quantile, screen, SUSPICIOUS_FLAG, type Ad } from './estimation';
+import { engineOf, estimate, plausible, powerFrom, quantile, screen, SUSPICIOUS_FLAG, type Ad } from './estimation';
 import { signalsFor, type GoneAd } from './signals';
 import type { MarketAd, MarketQuery } from './types';
 
@@ -69,7 +69,7 @@ export function adsCsv(docs: MarketAd[], now = new Date(), gone: GoneAd[] = []):
         : 'écartée : prix hors de la fourchette du modèle';
 
     const peers =
-      ad.km !== null && ad.year !== null ? estimate({ km: ad.km, year: ad.year, version: ad.version }, kept, ad.lbcId) : null;
+      ad.km !== null && ad.year !== null ? estimate(ad, kept, ad.lbcId) : null;
     const gap = peers ? (ad.price - peers.median) / peers.median : null;
 
     const history = [...(doc.priceHistory ?? [])]
@@ -99,6 +99,7 @@ export function adsCsv(docs: MarketAd[], now = new Date(), gone: GoneAd[] = []):
       kilometrage_km: ad.km,
       km_par_an: ad.km !== null && age ? Math.round(ad.km / age) : null,
       motorisation: ad.version,
+      puissance_ch: ad.power ?? null,
       motorisation_deduite_du_titre: ad.versionGuessed ? 'oui' : ad.version ? 'non' : null,
       version_publiee: doc.version ?? null,
       boite: ad.gearbox ?? (automatic ? 'Automatique' : null),
@@ -259,6 +260,7 @@ function toExportAd(doc: MarketAd): Ad {
     gearbox: doc.gearbox ?? null,
     fuel: doc.fuel ?? null,
     onlineSince: doc.publishedAt ?? doc.firstSeenAt ?? null,
+    power: doc.power ?? powerFrom(doc.attributes, doc.version, doc.title),
   };
 }
 

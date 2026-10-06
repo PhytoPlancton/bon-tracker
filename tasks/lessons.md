@@ -170,6 +170,9 @@ Format : [date] | ce qui a mal tourné | règle pour l'éviter
 - [2026-10-06] | La négociation d'une BMW 125i (218 ch) a lancé la cote de « BMW Série 1 » entière : 2 151 annonces, du 116i au 118d, une collecte interminable qui a fini par échouer sur un rechargement de page. |
   Une cote se calcule sur des voitures comparables dès la recherche : même modèle, années voisines, même puissance. Et un incident ponctuel de page se relit, il ne fait pas tomber toute une collecte.
 
+- [2026-10-06] | Une BMW 125i essence de 218 ch était comparée à des 118d et 123d diesel, et déclarée « 34 % au-dessus du marché ». Les motorisations étaient rapprochées par leur libellé, que leboncoin mêle de carrosserie et de finition : aucun ne se recoupait, et le dernier niveau d'élargissement acceptait alors tous les moteurs. |
+  Un moteur s'identifie par son carburant et sa puissance, pas par un libellé. On élargit les années et les kilomètres, jamais le moteur : faute de comparables, on se tait.
+
 ## Règles permanentes du projet
 - Un seul client MongoDB, `maxPoolSize` bas : le quota de 500 connexions est
   partagé entre plusieurs applications.

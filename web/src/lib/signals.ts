@@ -31,6 +31,7 @@ export interface SignalAd {
   year: number | null;
   version: string | null;
   title: string;
+  power?: number | null;
   description?: string | null;
   firstSeenAt?: Date | string | null;
 }
@@ -41,6 +42,7 @@ export interface GoneAd {
   km: number | null;
   year: number | null;
   version: string | null;
+  power?: number | null;
   goneAt: Date | string;
 }
 
@@ -147,9 +149,13 @@ export function signalsFor(
 }
 
 /** Même motorisation, même année, kilométrage à 1 % ou 1 500 km près. */
-function sameCar(a: { km: number | null; year: number | null; version: string | null }, b: { km: number | null; year: number | null; version: string | null }): boolean {
+type CarSpecs = { km: number | null; year: number | null; version: string | null; power?: number | null };
+function sameCar(a: CarSpecs, b: CarSpecs): boolean {
   if (a.km === null || b.km === null || a.year === null || a.year !== b.year) return false;
-  if (a.version && b.version && a.version !== b.version) return false;
+  // La puissance tranche quand elle est connue ; sinon la motorisation déclarée.
+  if (a.power && b.power) {
+    if (a.power !== b.power) return false;
+  } else if (a.version && b.version && a.version !== b.version) return false;
   return Math.abs(a.km - b.km) <= Math.max(1_500, a.km * 0.01);
 }
 

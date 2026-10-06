@@ -7,7 +7,7 @@ import { CollectProgress, type Activity } from '@/components/collect-progress';
 import { ConfirmButton } from '@/components/confirm-button';
 import { PriceKmChart } from '@/components/price-km-chart';
 import { useApi } from '@/lib/client';
-import type { Ad } from '@/lib/estimation';
+import { sameEngine, type Ad } from '@/lib/estimation';
 import { formatPrice } from '@/lib/format';
 import type { Sheet } from '@/lib/negotiation';
 import type { Signal } from '@/lib/signals';
@@ -57,8 +57,8 @@ export default function NegotiationPage({ params }: { params: Promise<{ id: stri
   // qu'il réunit assez de voitures pour dessiner un marché.
   const points = useMemo(() => {
     const pool = data?.pool ?? [];
-    const version = data?.ad?.version;
-    const same = version ? pool.filter((other) => other.version === version) : [];
+    const ad = data?.ad;
+    const same = ad ? pool.filter((other) => sameEngine(ad, other)) : [];
     return same.length >= 8 ? same : pool;
   }, [data]);
 
@@ -254,9 +254,9 @@ export default function NegotiationPage({ params }: { params: Promise<{ id: stri
             <section className="mt-3 rounded-2xl border border-ink-line bg-ink-soft p-4">
               <h2 className="text-[15px] font-medium text-zinc-100">Parmi son marché</h2>
               <p className="mb-2 text-[11px] text-zinc-500">
-                {ad.version && points.every((other) => other.version === ad.version)
-                  ? `Les ${points.length} annonces ${ad.version} relevées.`
-                  : `Les ${points.length} annonces du modèle relevées.`}
+                {points.every((other) => sameEngine(ad, other))
+                  ? `Les ${points.length} annonces du même moteur${ad.power ? ` (${ad.power} ch${ad.fuel ? `, ${ad.fuel.toLowerCase()}` : ''})` : ''}.`
+                  : `Les ${points.length} annonces du modèle relevées (trop peu du même moteur pour un nuage à part).`}
               </p>
               <PriceKmChart
                 points={points}

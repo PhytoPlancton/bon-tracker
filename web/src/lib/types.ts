@@ -134,6 +134,8 @@ export interface MarketAd {
   attributes?: Record<string, string>;
   lat?: number | null;
   lng?: number | null;
+  /** Puissance DIN en chevaux. */
+  power?: number | null;
   /** Absente d'un relevé complet : vendue, retirée ou expirée. */
   goneAt?: Date | null;
   firstSeenAt: Date;

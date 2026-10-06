@@ -30,6 +30,8 @@ export interface Ad {
   flags?: string[];
   /** Mise en ligne d'après le site, ou à défaut première fois vue. */
   onlineSince?: Date | string | null;
+  /** Puissance DIN en chevaux : avec le carburant, ce qui identifie un moteur. */
+  power?: number | null;
 }
 
 /** Sous ce prix, c'est une pièce, une épave ou un prix d'appel. */
@@ -46,11 +48,16 @@ const MIN_COMPARABLES = 4;
  * serré et on n'élargit que faute de mieux, en disant jusqu'où on est allé.
  */
 const LEVELS = [
-  { years: 1, kmShare: 0.15, kmFloor: 15_000, sameVersion: true },
-  { years: 2, kmShare: 0.25, kmFloor: 25_000, sameVersion: true },
-  { years: 3, kmShare: 0.4, kmFloor: 40_000, sameVersion: true },
-  { years: 3, kmShare: 0.4, kmFloor: 40_000, sameVersion: false },
+  { years: 1, kmShare: 0.15, kmFloor: 15_000 },
+  { years: 2, kmShare: 0.25, kmFloor: 25_000 },
+  { years: 3, kmShare: 0.4, kmFloor: 40_000 },
+  // Élargir les années et les kilomètres, jamais le moteur : une 118d ne dit
+  // rien du prix d'une 125i. Faute de comparables, mieux vaut se taire.
+  { years: 4, kmShare: 0.5, kmFloor: 50_000 },
 ] as const;
+
+/** Deux puissances à 8 % près désignent le même moteur (218 et 211 ch d'une même 125i selon les années). */
+const POWER_TOLERANCE = 0.08;
 
 type Level = (typeof LEVELS)[number];
 
@@ -83,6 +90,7 @@ export function readSpecs(attributes: Record<string, string> = {}) {
   return {
     km: km !== null && km <= 2_000_000 ? km : null,
     year,
+    power: powerFrom(attributes, attributes.u_car_version ?? attributes.u_car_version_label),
     version: clean(attributes.u_car_version ?? attributes.u_car_version_label),
     fuel: clean(attributes.fuel_label ?? attributes.energie ?? (fuelCode ? FUEL[fuelCode] : undefined)),
     gearbox: clean(
@@ -91,6 +99,21 @@ export function readSpecs(attributes: Record<string, string> = {}) {
     brandCode: clean(attributes.u_car_brand),
     modelCode: clean(attributes.u_car_model),
   };
+}
+
+/**
+ * Puissance DIN : déclarée, sinon lue dans un libellé (« 125i 218ch »).
+ * « cv » n'est pas retenu : il désigne souvent les chevaux fiscaux.
+ */
+export function powerFrom(attributes: Record<string, string> | null | undefined, ...texts: (string | null | undefined)[]): number | null {
+  const declared = Number(String(attributes?.horse_power_din ?? '').replace(/\D/g, ''));
+  if (declared >= 40 && declared <= 1_500) return declared;
+  for (const text of texts) {
+    const match = text?.match(/(\d{2,4})\s?ch\b/i);
+    const value = match ? Number(match[1]) : 0;
+    if (value >= 40 && value <= 1_500) return value;
+  }
+  return null;
 }
 
 function wholeNumber(value?: string): number | null {
@@ -253,10 +276,41 @@ export interface Target {
   km: number | null;
   year: number | null;
   version: string | null;
+  power?: number | null;
+  fuel?: string | null;
+}
+
+/** La cible porte-t-elle de quoi identifier son moteur ? */
+function hasEngine(target: Target): boolean {
+  return Boolean(target.power || target.version);
+}
+
+/**
+ * Même moteur : même carburant et même puissance à 8 % près quand les deux
+ * sont connues — les libellés de version mêlent carrosserie et finition
+ * (« Cabriolet 125i 218ch Luxe », « Coupé 125i 218ch Sport ») et ne se
+ * recoupent presque jamais ; sinon, même motorisation déclarée.
+ */
+export function sameEngine(target: Target, candidate: Ad): boolean {
+  if (target.power && candidate.power) {
+    if (target.fuel && candidate.fuel && fuelKey(target.fuel) !== fuelKey(candidate.fuel)) return false;
+    return Math.abs(candidate.power - target.power) <= target.power * POWER_TOLERANCE;
+  }
+  if (target.version) return candidate.version === target.version;
+  return true;
+}
+
+function fuelKey(fuel: string): string {
+  const text = fuel.toLowerCase();
+  if (/diesel|gazole/.test(text)) return 'diesel';
+  if (/hybride/.test(text)) return 'hybride';
+  if (/electrique|électrique/.test(text)) return 'electrique';
+  if (/gpl/.test(text)) return 'gpl';
+  return 'essence';
 }
 
 function matches(target: Target, candidate: Ad, level: Level): boolean {
-  if (level.sameVersion && target.version && candidate.version !== target.version) return false;
+  if (!sameEngine(target, candidate)) return false;
   if (target.year !== null && candidate.year !== null) {
     if (Math.abs(target.year - candidate.year) > level.years) return false;
   } else if (target.year !== null) {
@@ -275,8 +329,8 @@ function matches(target: Target, candidate: Ad, level: Level): boolean {
 function distance(target: Target, candidate: Ad): number {
   const years = target.year !== null && candidate.year !== null ? Math.abs(target.year - candidate.year) : 3;
   const km = target.km !== null && candidate.km !== null ? Math.abs(target.km - candidate.km) : 50_000;
-  const version = target.version && candidate.version !== target.version ? 2 : 0;
-  return years / 2 + km / 30_000 + version;
+  const engine = hasEngine(target) && !sameEngine(target, candidate) ? 2 : 0;
+  return years / 2 + km / 30_000 + engine;
 }
 
 export interface Estimate {
@@ -311,7 +365,7 @@ export function estimate(target: Target, pool: Ad[], excludeId?: string): Estima
       tolerance: {
         years: level.years,
         km: target.km !== null ? Math.round(Math.max(level.kmFloor, level.kmShare * target.km)) : 0,
-        sameVersion: level.sameVersion && Boolean(target.version),
+        sameVersion: hasEngine(target),
       },
       comparables: found
         .map((ad) => ({ ...ad, distance: distance(target, ad) }))
@@ -451,7 +505,7 @@ export function screen(ads: Ad[]): Ad[] {
   return harmonized.map((ad) => {
     // Une épave hors de la fourchette du modèle est déjà écartée pour ce qu'elle est.
     if (!keptIds.has(ad.lbcId) || ad.km === null || ad.year === null) return ad;
-    const peers = estimate({ km: ad.km, year: ad.year, version: ad.version }, kept, ad.lbcId);
+    const peers = estimate(ad, kept, ad.lbcId);
     return peers && ad.price < peers.median * SUSPICIOUS_RATIO
       ? { ...ad, flags: [...(ad.flags ?? []), SUSPICIOUS_FLAG] }
       : ad;

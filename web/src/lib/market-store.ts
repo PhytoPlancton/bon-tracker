@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { collectJobs, FRESH_FOR, MAX_ACTIVE } from './collect-jobs';
 import { collections } from './mongo';
-import { analyze, estimate, harmonize, plausible, readSpecs, screen, type Ad } from './estimation';
+import { analyze, estimate, harmonize, plausible, powerFrom, readSpecs, screen, type Ad } from './estimation';
 import { signalsFor, type Signal } from './signals';
 import type { MarketActivity, MarketAd, MarketQuery, ScrapedListing } from './types';
 
@@ -383,6 +383,9 @@ export function toAd(doc: MarketAd): Ad {
     gearbox: doc.gearbox ?? null,
     fuel: doc.fuel ?? null,
     onlineSince: doc.publishedAt ?? doc.firstSeenAt ?? null,
+    // Les annonces relevées avant la lecture de la puissance la livrent par
+    // leurs caractéristiques ou leur libellé.
+    power: doc.power ?? powerFrom(doc.attributes, doc.version, doc.title),
   };
 }
 
@@ -455,7 +458,7 @@ export async function signalsForAds(ads: Ad[], gone: { lbcId: string; price: num
   const { kept } = plausible(ads);
   const result: Record<string, Signal[]> = {};
   for (const ad of ads) {
-    const peers = ad.km !== null && ad.year !== null ? estimate({ km: ad.km, year: ad.year, version: ad.version }, kept, ad.lbcId) : null;
+    const peers = ad.km !== null && ad.year !== null ? estimate(ad, kept, ad.lbcId) : null;
     const doc = docs.get(ad.lbcId);
     const signals = signalsFor(
       { ...ad, description: doc?.description ?? null, firstSeenAt: doc?.firstSeenAt ?? null },

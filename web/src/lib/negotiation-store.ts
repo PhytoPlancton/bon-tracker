@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { collections } from './mongo';
 import { env } from './env';
-import { harmonize, screen, type Ad } from './estimation';
+import { harmonize, powerFrom, screen, type Ad } from './estimation';
 import { createQuery, ingestMarketAds, loadAds, loadGoneAds, pretty, prettyModel } from './market-store';
 import { signalsFor, type Signal } from './signals';
 import { buildSheet, type Sheet } from './negotiation';
@@ -265,6 +265,7 @@ function adFrom(doc: MarketAd): Ad {
     gearbox: doc.gearbox ?? null,
     fuel: doc.fuel ?? null,
     onlineSince: doc.publishedAt ?? doc.firstSeenAt ?? null,
+    power: doc.power ?? powerFrom(doc.attributes, doc.version, doc.title),
   };
 }
 

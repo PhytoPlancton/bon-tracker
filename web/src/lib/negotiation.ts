@@ -67,7 +67,7 @@ export function buildSheet({ ad, pool, history, now = new Date() }: SheetInput):
   // Même boîte d'abord : une automatique ne se négocie pas au prix d'une
   // manuelle. Faute de comparables suffisants, toutes boîtes confondues.
   const sameGearbox = ad.gearbox ? peers.filter((other) => other.gearbox === ad.gearbox) : peers;
-  const target = { km: ad.km, year: ad.year, version: ad.version };
+  const target = { km: ad.km, year: ad.year, version: ad.version, power: ad.power, fuel: ad.fuel };
   const fair = (ad.gearbox ? estimate(target, sameGearbox) : null) ?? estimate(target, peers);
 
   const position = fair ? (ad.price - fair.median) / fair.median : null;
@@ -178,8 +178,11 @@ function argumentsFor(input: {
   const args: Argument[] = [];
 
   if (fair && position !== null) {
+    // Le moteur se dit par sa puissance et son carburant quand on les connaît :
+    // c'est sur eux que portent les comparables, pas sur un libellé de finition.
+    const engine = ad.power ? `même moteur, ${ad.power} ch${ad.fuel ? ` ${ad.fuel.toLowerCase()}` : ''}` : ad.version;
     const scope = [
-      fair.tolerance.sameVersion && ad.version ? ad.version : null,
+      fair.tolerance.sameVersion ? engine : null,
       `±${fair.tolerance.years} an${fair.tolerance.years > 1 ? 's' : ''}`,
       fair.tolerance.km ? `±${euros(fair.tolerance.km).replace(' €', '')} km` : null,
     ]
