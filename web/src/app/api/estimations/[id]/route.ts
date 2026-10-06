@@ -1,7 +1,15 @@
 import { NextResponse } from 'next/server';
 import { currentUid } from '@/lib/auth';
-import { analyze, estimate, harmonize, plausible } from '@/lib/estimation';
-import { deleteQuery, getQuery, loadAds, refreshQuery } from '@/lib/market-store';
+import { analyze, estimate, harmonize, plausible, screen } from '@/lib/estimation';
+import {
+  deleteQuery,
+  getQuery,
+  loadAds,
+  loadGoneAds,
+  refreshQuery,
+  signalsForAds,
+  snapshotsFor,
+} from '@/lib/market-store';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -20,7 +28,7 @@ export async function GET(request: Request, context: Context) {
   const query = await getQuery(uid, id);
   if (!query) return NextResponse.json({ error: 'Estimation inconnue' }, { status: 404 });
 
-  const ads = harmonize(await loadAds(query.adIds));
+  const ads = screen(await loadAds(query.adIds));
   const { kept } = plausible(ads);
 
   const url = new URL(request.url);
@@ -30,12 +38,30 @@ export async function GET(request: Request, context: Context) {
 
   const target = km !== null || year !== null ? { km, year, version } : null;
 
+  // Les annonces parties ne sont plus en ligne : harmonisées avec les autres
+  // pour parler des mêmes moteurs, mais jamais mêlées aux comparables.
+  const goneRaw = await loadGoneAds(query.codes);
+  const gone = harmonize([...ads, ...goneRaw]).slice(ads.length) as typeof goneRaw;
+  const [history, signals] = await Promise.all([snapshotsFor(query.key), signalsForAds(ads, gone)]);
+
   const { adIds: _ignored, ...rest } = query;
   return NextResponse.json({
     estimation: rest,
     analysis: analyze(ads),
     ads,
     estimate: target ? estimate(target, kept) : null,
+    history,
+    gone: gone.map(({ lbcId, price, km, year, version, gearbox, daysOnline, goneAt }) => ({
+      lbcId,
+      price,
+      km,
+      year,
+      version,
+      gearbox,
+      daysOnline,
+      goneAt,
+    })),
+    signals,
   });
 }
 

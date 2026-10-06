@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { collectJobs, FRESH_FOR, MAX_ACTIVE } from './collect-jobs';
 import { collections } from './mongo';
-import { readSpecs, type Ad } from './estimation';
+import { analyze, estimate, harmonize, plausible, readSpecs, screen, type Ad } from './estimation';
+import { signalsFor, type Signal } from './signals';
 import type { MarketActivity, MarketAd, MarketQuery, ScrapedListing } from './types';
 
 /** Envoi, avancement, arrêt et collectes mortes : le cycle commun à toutes les collectes. */
@@ -187,7 +188,8 @@ export async function ingestMarketAds(queryId: string | null, scraped: ScrapedLi
 
     const previous = known.get(ad.lbcId);
     const update: Record<string, unknown> = {
-      $set: { title: ad.title, url: ad.url, price, lastSeenAt: now, ...fields },
+      // Revue en ligne : elle n'a pas disparu (ou elle est revenue).
+      $set: { title: ad.title, url: ad.url, price, lastSeenAt: now, goneAt: null, ...fields },
       $setOnInsert: { lbcId: ad.lbcId, firstSeenAt: now, priceHistory: [{ price, at: now }] },
     };
     if (previous && previous.price !== price) {
@@ -231,9 +233,102 @@ export async function updateQueryProgress(
   },
 ): Promise<{ found: boolean; stop: boolean }> {
   const { codes, ...rest } = patch;
+  // L'état d'avant la bascule : ce que le relevé précédent avait vu, pour
+  // repérer ce qui a disparu depuis.
+  const { marketQueries } = await collections();
+  const before =
+    patch.status === 'done'
+      ? await marketQueries.findOne(
+          { id },
+          { projection: { _id: 0, adIds: 1, pendingIds: 1, runMode: 1, stopRequested: 1, pages: 1 } },
+        )
+      : null;
+
   const result = await jobs.progress(id, { ...rest, learned: codes !== undefined ? { codes } : undefined });
-  if (result.found && patch.status === 'done') await shareCollection(id);
+  if (result.found && patch.status === 'done') {
+    if (before) await markGone(before, patch.pages);
+    await shareCollection(id);
+    await recordSnapshot(id).catch((error) => console.warn('[cote] photo :', error));
+  }
   return result;
+}
+
+/** Au-delà, la recherche a été tronquée : ce qui manque n'a pas disparu. */
+const MAX_PAGES = 20;
+
+/**
+ * Marque les annonces absentes d'un relevé complet. Seulement quand ce relevé
+ * a tout parcouru : un relevé arrêté, bloqué, tronqué ou nettement plus court
+ * que le précédent ferait « disparaître » des voitures toujours en vente.
+ */
+async function markGone(
+  before: { adIds?: string[]; pendingIds?: string[]; runMode?: string; stopRequested?: boolean; pages?: number },
+  pages: number | undefined,
+): Promise<void> {
+  const previous = before.adIds ?? [];
+  const seen = new Set(before.pendingIds ?? []);
+  if (before.runMode === 'fresh' || before.stopRequested || !previous.length) return;
+  if ((pages ?? before.pages ?? 0) >= MAX_PAGES || seen.size < previous.length * 0.8) return;
+  const gone = previous.filter((lbcId) => !seen.has(lbcId));
+  if (!gone.length) return;
+  const { marketAds } = await collections();
+  await marketAds.updateMany({ lbcId: { $in: gone }, goneAt: null }, { $set: { goneAt: new Date() } });
+}
+
+/** Photo de la cote du modèle, une par jour : la courbe se dessine au fil des relevés. */
+export async function recordSnapshot(id: string): Promise<void> {
+  const { marketQueries, marketSnapshots } = await collections();
+  const query = await marketQueries.findOne({ id }, { projection: { key: 1, adIds: 1 } });
+  if (!query) return;
+  const analysis = analyze(screen(await loadAds(query.adIds)));
+  if (!analysis) return;
+  const now = new Date();
+  await marketSnapshots.updateOne(
+    { key: query.key, day: now.toISOString().slice(0, 10) },
+    {
+      $set: {
+        at: now,
+        count: analysis.count,
+        median: analysis.median,
+        p25: analysis.p25,
+        p75: analysis.p75,
+        versions: analysis.versions.map(({ name, count, median }) => ({ name, count, median })),
+      },
+    },
+    { upsert: true },
+  );
+}
+
+export async function snapshotsFor(key: string) {
+  const { marketSnapshots } = await collections();
+  return marketSnapshots.find({ key }, { projection: { _id: 0, key: 0 } }).sort({ day: 1 }).limit(400).toArray();
+}
+
+/**
+ * Annonces du modèle parties ces quatre derniers mois : leur durée en ligne
+ * dit à quelle vitesse se vend une voiture à un prix donné.
+ */
+export async function loadGoneAds(
+  codes: { brand: string; model: string } | null,
+): Promise<(Ad & { daysOnline: number; goneAt: Date })[]> {
+  if (!codes) return [];
+  const { marketAds } = await collections();
+  const since = new Date(Date.now() - 120 * 24 * 60 * 60 * 1000);
+  const docs = await marketAds
+    .find(
+      { modelCode: codes.model, goneAt: { $gte: since } },
+      { projection: { _id: 0, description: 0, attributes: 0 } },
+    )
+    .limit(1000)
+    .toArray();
+  return docs.map((doc) => {
+    const start = new Date(doc.publishedAt ?? doc.firstSeenAt).getTime();
+    return {
+      ...toAd(doc),
+      goneAt: doc.goneAt!,
+      daysOnline: Math.max(0, Math.round((new Date(doc.goneAt!).getTime() - start) / 86_400_000)),
+    };
+  });
 }
 
 /**
@@ -342,4 +437,31 @@ export function prettyModel(brand: string, model: string): string {
   const prefix = `${brand}_`;
   const bare = model.toUpperCase().startsWith(prefix.toUpperCase()) ? model.slice(prefix.length) : model;
   return bare.replace(/_/g, ' ').trim();
+}
+
+/**
+ * Signaux de chaque annonce d'un modèle. Calculés ici, où sont les
+ * descriptions : seuls les signaux voyagent jusqu'au navigateur.
+ */
+export async function signalsForAds(ads: Ad[], gone: { lbcId: string; price: number; km: number | null; year: number | null; version: string | null; goneAt: Date }[]) {
+  const { marketAds } = await collections();
+  const docs = new Map(
+    (
+      await marketAds
+        .find({ lbcId: { $in: ads.map((ad) => ad.lbcId) } }, { projection: { _id: 0, lbcId: 1, description: 1, firstSeenAt: 1 } })
+        .toArray()
+    ).map((doc) => [doc.lbcId, doc]),
+  );
+  const { kept } = plausible(ads);
+  const result: Record<string, Signal[]> = {};
+  for (const ad of ads) {
+    const peers = ad.km !== null && ad.year !== null ? estimate({ km: ad.km, year: ad.year, version: ad.version }, kept, ad.lbcId) : null;
+    const doc = docs.get(ad.lbcId);
+    const signals = signalsFor(
+      { ...ad, description: doc?.description ?? null, firstSeenAt: doc?.firstSeenAt ?? null },
+      { median: peers?.median ?? null, gone, live: ads },
+    );
+    if (signals.length) result[ad.lbcId] = signals;
+  }
+  return result;
 }

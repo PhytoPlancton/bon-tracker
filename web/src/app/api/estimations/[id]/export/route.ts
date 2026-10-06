@@ -1,6 +1,7 @@
 import { currentUid } from '@/lib/auth';
 import { adsCsv, exportFilename, summaryCsv } from '@/lib/market-export';
-import { getQuery } from '@/lib/market-store';
+import { harmonize } from '@/lib/estimation';
+import { getQuery, loadAds, loadGoneAds } from '@/lib/market-store';
 import { collections } from '@/lib/mongo';
 
 export const runtime = 'nodejs';
@@ -23,7 +24,16 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
 
   const kind = new URL(request.url).searchParams.get('quoi') === 'synthese' ? 'synthese' : 'annonces';
   const now = new Date();
-  const csv = kind === 'synthese' ? summaryCsv(docs, now) : adsCsv(docs, now);
+  let csv: string;
+  if (kind === 'synthese') {
+    csv = summaryCsv(docs, now);
+  } else {
+    // Les annonces parties servent à repérer les republications.
+    const live = await loadAds(query.adIds);
+    const goneRaw = await loadGoneAds(query.codes);
+    const gone = harmonize([...live, ...goneRaw]).slice(live.length) as typeof goneRaw;
+    csv = adsCsv(docs, now, gone);
+  }
 
   return new Response(csv, {
     headers: {

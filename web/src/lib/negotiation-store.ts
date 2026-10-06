@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { collections } from './mongo';
 import { env } from './env';
-import { harmonize, type Ad } from './estimation';
-import { createQuery, ingestMarketAds, loadAds, pretty, prettyModel } from './market-store';
+import { harmonize, screen, type Ad } from './estimation';
+import { createQuery, ingestMarketAds, loadAds, loadGoneAds, pretty, prettyModel } from './market-store';
+import { signalsFor, type Signal } from './signals';
 import { buildSheet, type Sheet } from './negotiation';
 import type { MarketAd, Negotiation, ScrapedListing } from './types';
 
@@ -142,6 +143,8 @@ export interface NegotiationView {
   query: { id: string; brand: string; model: string; status: string; pages: number; ads: number; activity: unknown } | null;
   sheet: Sheet | null;
   pool: Ad[];
+  /** À vérifier, et ce qui rassure : prix, kilométrage, republication, description. */
+  signals: Signal[];
 }
 
 export async function getNegotiation(uid: string, id: string): Promise<NegotiationView | null> {
@@ -172,17 +175,36 @@ export async function getNegotiation(uid: string, id: string): Promise<Negotiati
   let ad: NegotiationView['ad'] = null;
   let sheet: Sheet | null = null;
   let pool: Ad[] = [];
+  let signals: Signal[] = [];
 
   if (doc) {
     const raw = adFrom(doc);
     const others = query && negotiation.status === 'ready' ? await loadAds(query.adIds.filter((other) => other !== doc.lbcId)) : [];
     // Harmonisés ensemble : le moteur d'une annonce muette se déduit de ceux
     // que portent les autres annonces du modèle.
-    const [harmonized, ...rest] = harmonize([raw, ...others]);
+    const [harmonized, ...rest] = screen([raw, ...others]);
     ad = { ...harmonized, priceHistory: doc.priceHistory ?? [{ price: doc.price, at: doc.firstSeenAt }] };
     pool = rest;
     if (negotiation.status === 'ready') {
       sheet = buildSheet({ ad: harmonized, pool, history: ad.priceHistory });
+    }
+
+    // Les annonces parties du modèle disent si celle-ci a déjà été publiée
+    // sous un autre numéro ; la description, ce que le vendeur avoue.
+    const goneRaw = query ? await loadGoneAds(query.codes) : [];
+    const gone = harmonize([...rest, ...goneRaw]).slice(rest.length) as typeof goneRaw;
+    signals = signalsFor(
+      { ...harmonized, description: doc.description ?? null, firstSeenAt: doc.firstSeenAt },
+      { median: sheet?.fair?.median ?? null, gone: gone.filter((other) => other.lbcId !== doc.lbcId), live: rest },
+    );
+    if (sheet) {
+      const republished = signals.find((signal) => signal.label === 'Republiée');
+      // Une voiture remise en ligne pour paraître neuve cherche preneur depuis
+      // plus longtemps qu'elle ne l'affiche : c'est un argument.
+      if (republished) sheet.arguments.splice(1, 0, { text: republished.detail, weight: 'strong' });
+      if (signals.some((signal) => signal.label === 'Prix anormalement bas')) {
+        sheet.warnings = sheet.warnings.filter((warning) => !warning.startsWith('Prix très inférieur'));
+      }
     }
   }
 
@@ -202,6 +224,7 @@ export async function getNegotiation(uid: string, id: string): Promise<Negotiati
       : null,
     sheet,
     pool,
+    signals,
   };
 }
 

@@ -17,6 +17,17 @@ Deux applications en une, au choix dans les réglages :
   - **Négocier** : colle le lien d'une annonce ; la fiche donne le prix juste
     d'après ses comparables, trois prix (ouverture, cible, plafond), des
     arguments chiffrés et un message prêt à envoyer au vendeur.
+  - **Évolution de la cote** : une photo par jour de relevé, suivie moteur par
+    moteur (toutes motorisations confondues, la médiane suivrait le mélange
+    des annonces, pas les prix).
+  - **Pour la vendre** : trois prix d'annonce (vite, au marché, en
+    patientant) et la durée en ligne observée des annonces parties à chaque
+    niveau de prix.
+  - **Signaux** : prix anormalement bas (mis à part des comparables, toujours
+    signalé), kilométrage incohérent, annonce republiée, ce que dit la
+    description (sans CT, à prévoir… / carnet, factures…).
+  - **Export CSV** des annonces et de la synthèse, avec une consigne pour
+    ChatGPT.
 - **Bon Tracker Immo** — suivi des biens et marché d'un appartement ou d'une
   maison dans une commune : prix (ou loyer) au m², par pièces, décote des
   passoires énergétiques, valeur de ton bien, rendement brut.

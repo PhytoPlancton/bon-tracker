@@ -10,6 +10,8 @@ import { useApi } from '@/lib/client';
 import type { Ad } from '@/lib/estimation';
 import { formatPrice } from '@/lib/format';
 import type { Sheet } from '@/lib/negotiation';
+import type { Signal } from '@/lib/signals';
+import { SignalList } from '@/components/signal-badges';
 
 interface View {
   negotiation: {
@@ -31,6 +33,7 @@ interface View {
   } | null;
   sheet: Sheet | null;
   pool: Ad[];
+  signals?: Signal[];
 }
 
 export default function NegotiationPage({ params }: { params: Promise<{ id: string }> }) {
@@ -177,6 +180,13 @@ export default function NegotiationPage({ params }: { params: Promise<{ id: stri
                 ))}
               </ul>
             </div>
+          )}
+
+          {(data.signals?.length ?? 0) > 0 && (
+            <section className="mt-3 rounded-2xl border border-ink-line bg-ink-soft p-4">
+              <h2 className="mb-2 text-[15px] font-medium text-zinc-100">Ce que dit l’annonce</h2>
+              <SignalList signals={data.signals!} />
+            </section>
           )}
 
           {sheet.opening !== null && sheet.target !== null && sheet.ceiling !== null && (

@@ -192,7 +192,7 @@ try {
   check('médiane par moteur', analysis.versions.every((v) => typeof v.median === 'number' && v.median > 0) && analysis.versions[0].median > analysis.versions[1].median, analysis.versions);
   check('toutes les annonces rattachées', done.ads.length === ads.length && done.estimation.ads === ads.length, done.ads.length);
   check('épave écartée', analysis.excluded === 1 && !done.estimate, analysis.excluded);
-  check('deux motorisations, la plus courante d’abord', analysis.versions.length === 2 && analysis.versions[0]?.name === 'Boxster 3.2 S' && analysis.versions[0]?.count === 34 && analysis.versions[1]?.name === 'Boxster 2.5' && analysis.versions[1]?.count === 21, analysis.versions);
+  check('deux motorisations, la plus courante d’abord', analysis.versions.length === 2 && analysis.versions[0]?.name === 'Boxster 3.2 S' && analysis.versions[0]?.count === 33 && analysis.versions[1]?.name === 'Boxster 2.5' && analysis.versions[1]?.count === 21, analysis.versions);
   check('années couvertes', analysis.yearMin === 1997 && analysis.yearMax === 2004, [analysis.yearMin, analysis.yearMax]);
   check('courbe du marché', analysis.trend.length >= 4, analysis.trend);
   check('la courbe descend avec les kilomètres', analysis.trend[0].price > analysis.trend[analysis.trend.length - 1].price, analysis.trend);
@@ -203,7 +203,10 @@ try {
   check('boîte séparée du moteur', byId('tiptronic')?.version === 'Boxster 3.2 S' && byId('tiptronic')?.gearbox === 'Automatique', byId('tiptronic'));
   check('moteur déduit du titre', byId('titre')?.version === 'Boxster 2.5' && byId('titre')?.versionGuessed === true, byId('titre'));
   check('volant à droite signalé', byId('rhd')?.flags?.includes('Volant à droite'), byId('rhd'));
-  check('annonce à risque hors des affaires', !analysis.deals.some((d) => d.lbcId === 'rhd') && analysis.flagged === 1, { flagged: analysis.flagged, deals: analysis.deals.map((d) => d.lbcId) });
+  // L'affaire, à −47 % de ses comparables, est un prix suspect : elle ne sert
+  // plus de comparable (d'où 33 et non 34 ci-dessus), mais reste une affaire.
+  check('annonce à risque hors des affaires', !analysis.deals.some((d) => d.lbcId === 'rhd') && analysis.flagged === 2, { flagged: analysis.flagged, deals: analysis.deals.map((d) => d.lbcId) });
+  check('prix suspect : hors des comparables, toujours affaire', byId('affaire')?.flags?.includes('Prix anormalement bas') && analysis.deals[0]?.lbcId === 'affaire', byId('affaire'));
   check('annonce sans kilométrage conservée', done.ads.some((a) => a.lbcId === 'sanskm' && a.km === null), null);
   check('caractéristiques lues', done.ads.find((a) => a.lbcId === 's0')?.version === 'Boxster 3.2 S' && done.ads.find((a) => a.lbcId === 's0')?.year === 2000, done.ads.find((a) => a.lbcId === 's0'));
 

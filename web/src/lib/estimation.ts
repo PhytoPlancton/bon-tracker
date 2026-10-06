@@ -374,7 +374,7 @@ export function analyze(ads: Ad[]): Analysis | null {
       .map(([name, list]) => ({ name, count: list.length, median: median(list) }))
       .sort((a, b) => b.count - a.count),
     trend: trendOf(kept),
-    deals: dealsOf(kept),
+    deals: dealsOf(kept, [...kept, ...suspects(ads)]),
   };
 }
 
@@ -404,11 +404,15 @@ function trendOf(ads: Ad[]): Analysis['trend'] {
   return points;
 }
 
-function dealsOf(ads: Ad[]): Analysis['deals'] {
+/**
+ * Affaires : les candidates (y compris les prix suspects, à vérifier mais à
+ * montrer) jugées face aux seules comparables saines.
+ */
+function dealsOf(ads: Ad[], candidates: Ad[] = ads): Analysis['deals'] {
   const deals: Analysis['deals'] = [];
   const level = LEVELS[1];
 
-  for (const ad of ads) {
+  for (const ad of candidates) {
     // Sans moteur connu, l'annonce se comparerait à toutes les motorisations
     // à la fois : une 2.7 passerait pour une affaire face aux 3.4 S.
     if (ad.km === null || ad.year === null || !ad.version) continue;
@@ -428,4 +432,37 @@ function dealsOf(ads: Ad[]): Analysis['deals'] {
   }
 
   return deals.sort((a, b) => b.ratio - a.ratio).slice(0, 10);
+}
+
+/** Sous 60 % de ses comparables, une voiture n'est plus une affaire mais une question. */
+export const SUSPICIOUS_RATIO = 0.6;
+export const SUSPICIOUS_FLAG = 'Prix anormalement bas';
+
+/**
+ * Harmonise, puis met à part les prix anormalement bas face à leurs propres
+ * comparables : le profil des arnaques. Comme une annonce à risque, elle reste
+ * visible mais ne compte plus dans aucun calcul — sans quoi deux annonces
+ * piégées suffisent à fausser la cote d'une voiture voisine.
+ */
+export function screen(ads: Ad[]): Ad[] {
+  const harmonized = harmonize(ads);
+  const { kept } = plausible(harmonized);
+  const keptIds = new Set(kept.map((ad) => ad.lbcId));
+  return harmonized.map((ad) => {
+    // Une épave hors de la fourchette du modèle est déjà écartée pour ce qu'elle est.
+    if (!keptIds.has(ad.lbcId) || ad.km === null || ad.year === null) return ad;
+    const peers = estimate({ km: ad.km, year: ad.year, version: ad.version }, kept, ad.lbcId);
+    return peers && ad.price < peers.median * SUSPICIOUS_RATIO
+      ? { ...ad, flags: [...(ad.flags ?? []), SUSPICIOUS_FLAG] }
+      : ad;
+  });
+}
+
+/**
+ * Les annonces mises à part pour leur seul prix suspect : exclues des
+ * comparables, mais toujours candidates aux affaires — une vraie bonne
+ * affaire à −45 % existe, signalée comme telle.
+ */
+export function suspects(ads: Ad[]): Ad[] {
+  return ads.filter((ad) => ad.flags?.length === 1 && ad.flags[0] === SUSPICIOUS_FLAG);
 }

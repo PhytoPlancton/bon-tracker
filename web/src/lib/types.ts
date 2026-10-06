@@ -134,6 +134,8 @@ export interface MarketAd {
   attributes?: Record<string, string>;
   lat?: number | null;
   lng?: number | null;
+  /** Absente d'un relevé complet : vendue, retirée ou expirée. */
+  goneAt?: Date | null;
   firstSeenAt: Date;
   lastSeenAt: Date;
 }
@@ -230,6 +232,8 @@ export interface Alert {
   km: number | null;
   year: number | null;
   version: string | null;
+  /** Prix anormalement bas face à ses comparables : à vérifier avant tout. */
+  suspicious?: boolean;
   /** Déjà en ligne à la création de la veille : listée, jamais notifiée. */
   initial: boolean;
   createdAt: Date;
@@ -258,4 +262,17 @@ export interface Negotiation {
   error: string | null;
   createdAt: Date;
   updatedAt: Date;
+}
+
+/** Photo de la cote d'un modèle à une date : de quoi tracer son évolution. */
+export interface MarketSnapshot {
+  key: string;
+  /** « 2026-10-06 » : une photo par modèle et par jour, la dernière l'emporte. */
+  day: string;
+  at: Date;
+  count: number;
+  median: number;
+  p25: number;
+  p75: number;
+  versions: { name: string; count: number; median: number }[];
 }

@@ -135,6 +135,26 @@ Un second domaine dans la même app, bien séparé : on bascule dans les réglag
       leboncoin (worker/tests/collecte.mjs)
 - [ ] Éprouver sur leboncoin réel : forme du lieu retenue, clés `square`,
       `rooms`, `real_estate_type`, `energy_rate` présentes
+## Cote dans le temps, vente, signaux (2026-10-06)
+- [x] Photo de la cote à chaque relevé réussi (une par modèle et par jour) :
+      médiane, quartiles, effectif, par motorisation ; courbe sur l'estimation,
+      variation sur 30 jours
+- [x] Annonces disparues : repérées à chaque relevé complet (jamais sur un relevé
+      partiel, arrêté ou tronqué), réapparition gérée
+- [x] « Vendre ta voiture » : trois prix (vite, au marché, patient) d'après ses
+      comparables, avec la durée en ligne observée des annonces parties à ce
+      niveau de prix — à défaut, l'âge des annonces encore en ligne
+- [x] Signaux sur une annonce : prix anormalement bas, kilométrage incohérent
+      avec l'âge, annonce republiée (même voiture disparue puis revenue), mots
+      de la description (sans CT, à revoir, fuite… / carnet, factures…)
+- [x] Signaux dans la fiche de négociation, la fiche du graphique et l'export
+- [x] Prix anormalement bas mis à part des comparables partout (cote, valeur,
+      négociation, alertes, export), toujours candidat aux affaires et signalé
+- [x] « Ta voiture » exige la motorisation quand le modèle en a plusieurs
+- [x] Tests : cote.mjs (22), vente.ts (12), attentes revues dans estimation et export
+- [ ] Éprouver sur données réelles : premières disparitions et durées observées
+      (il faut quelques jours de relevés)
+
 ## Export CSV (2026-10-05)
 - [x] Annonces d'une estimation en CSV : prix et historique, baisses, durée en
       ligne, km/an, motorisation (harmonisée et publiée), boîte, vendeur,

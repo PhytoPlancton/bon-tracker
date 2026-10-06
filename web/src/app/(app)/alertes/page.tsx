@@ -25,6 +25,7 @@ interface AlertItem {
   year: number | null;
   version: string | null;
   initial: boolean;
+  suspicious?: boolean;
   createdAt: string;
   updatedAt: string;
   readAt: string | null;
@@ -138,6 +139,11 @@ function Alerts() {
                       .filter(Boolean)
                       .join(' · ')}
                   </div>
+                  {alert.suspicious && (
+                    <div className="mt-0.5 inline-block rounded bg-up/15 px-1.5 py-0.5 text-[10px] text-up">
+                      ! Prix anormalement bas : à vérifier avant tout
+                    </div>
+                  )}
                   <div className="mt-0.5 text-[11px] text-zinc-600">
                     {alert.comparables} comparables autour de {formatPrice(alert.reference)} ·{' '}
                     {alert.initial ? 'déjà en ligne' : relativeTime(alert.updatedAt)}

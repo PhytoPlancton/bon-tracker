@@ -161,6 +161,12 @@ Format : [date] | ce qui a mal tourné | règle pour l'éviter
 - [2026-10-05] | Deux sessions ont travaillé en parallèle, l'une sur `main` (alertes, négociation), l'autre sur une branche à part (immobilier, connexion) ; le PC tournait sur la branche, sans les alertes, et 16 fichiers ont divergé. Les commits de la branche portaient en outre une mention d'attribution, contraire à la règle d'anonymat. |
   Une seule branche de référence, `main`, que le PC déploie ; après chaque déploiement, vérifier `git log -1` sur le PC. Tout commit, d'où qu'il vienne, est relu avant fusion pour les mentions d'identité.
 
+- [2026-10-06] | La courbe de cote « toutes motorisations » affichait −33 % alors qu'aucun prix n'avait bougé : la médiane suivait le mélange des annonces en ligne (plus de 2.7, moins de 3.2 S). Même piège pour « Ta voiture » sans moteur choisi : une valeur entre deux marchés. |
+  Une médiane ne se compare dans le temps, ou ne s'applique à une voiture, qu'à population homogène : une motorisation à la fois, jamais un mélange dont la composition varie.
+
+- [2026-10-06] | Deux annonces à prix d'arnaque, gardées comme comparables, faisaient tomber la valeur d'une voiture voisine de 20 000 à 11 600 €. |
+  Un prix suspect ne sert de référence à personne ; il reste visible et signalé. Le tri se fait au même endroit pour tous les calculs, côté serveur, pas dans un écran.
+
 ## Règles permanentes du projet
 - Un seul client MongoDB, `maxPoolSize` bas : le quota de 500 connexions est
   partagé entre plusieurs applications.

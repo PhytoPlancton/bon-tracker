@@ -8,6 +8,10 @@ import { NegotiateButton } from '@/components/negotiate-button';
 import { ConfirmButton } from '@/components/confirm-button';
 import { PriceKmChart, type ColorBy } from '@/components/price-km-chart';
 import { WatchPanel } from '@/components/watch-panel';
+import { CoteHistory, type Snapshot } from '@/components/cote-history';
+import { SignalBadges } from '@/components/signal-badges';
+import { sellingAdvice } from '@/lib/selling';
+import type { Signal } from '@/lib/signals';
 import { ExportPanel } from '@/components/export-panel';
 import { useApi } from '@/lib/client';
 import { analyze, estimate, plausible, type Ad } from '@/lib/estimation';
@@ -32,6 +36,11 @@ interface Detail {
     stopRequested?: boolean;
   };
   ads: Ad[];
+  /** Photos de la cote, une par jour de relevé. */
+  history?: Snapshot[];
+  /** Annonces du modèle parties ces derniers mois, avec leur durée en ligne. */
+  gone?: (Ad & { daysOnline: number })[];
+  signals?: Record<string, Signal[]>;
 }
 
 const ALL = '__all__';
@@ -46,6 +55,8 @@ export default function EstimationPage({ params }: { params: Promise<{ id: strin
   const [gearbox, setGearbox] = useState(ALL);
   const [year, setYear] = useState('');
   const [km, setKm] = useState('');
+  // Motorisation de ta voiture, quand le filtre n'en désigne pas une.
+  const [carVersion, setCarVersion] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [colorBy, setColorBy] = useState<ColorBy>('version');
@@ -60,6 +71,7 @@ export default function EstimationPage({ params }: { params: Promise<{ id: strin
     return () => clearInterval(timer);
   }, [collecting, reload]);
 
+  // Les prix anormalement bas arrivent déjà marqués « à risque » par le serveur.
   const ads = useMemo(() => data?.ads ?? [], [data]);
   const overall = useMemo(() => analyze(ads), [ads]);
   // Épaves, pièces et prix aberrants écrasent le graphique et faussent tout.
@@ -84,6 +96,12 @@ export default function EstimationPage({ params }: { params: Promise<{ id: strin
   const shown = useMemo(() => [...filtered, ...withVersion(risky, version)], [filtered, risky, version]);
   const analysis = useMemo(() => analyze(filtered), [filtered]);
 
+  // La cote se suit moteur par moteur : celui choisi, sinon le plus courant.
+  const historyVersion =
+    version !== ALL && version !== UNKNOWN
+      ? version
+      : (overall?.versions.find((item) => item.name !== UNKNOWN)?.name ?? UNKNOWN);
+
   const versionOrder = useMemo(() => overall?.versions.map((item) => item.name) ?? [], [overall]);
   const several = versionOrder.length > 1;
   // Colorer par moteur n'a de sens que lorsque plusieurs sont affichés.
@@ -102,14 +120,29 @@ export default function EstimationPage({ params }: { params: Promise<{ id: strin
     }));
   }, [version, several, shownColor, versionOrder, kept, analysis]);
 
+  // Une voiture se compare à celles de son moteur : le filtre le désigne, ou
+  // le champ du formulaire. Faute de quoi, sur un modèle à plusieurs moteurs,
+  // la valeur serait une moyenne entre deux marchés qui ne décrit aucune voiture.
+  const engines = useMemo(() => (overall?.versions ?? []).map((item) => item.name).filter((name) => name !== UNKNOWN), [overall]);
+  const carEngine =
+    version !== ALL && version !== UNKNOWN ? version : carVersion || (engines.length === 1 ? engines[0] : null);
+  const needsEngine = engines.length > 1 && !carEngine;
+
   const target = useMemo(() => {
     const kmValue = Number(km.replace(/\D/g, '')) || null;
     const yearValue = Number(year) >= 1900 ? Number(year) : null;
-    if (kmValue === null && yearValue === null) return null;
-    return { km: kmValue, year: yearValue, version: version === ALL || version === UNKNOWN ? null : version };
-  }, [km, year, version]);
+    if ((kmValue === null && yearValue === null) || needsEngine) return null;
+    return { km: kmValue, year: yearValue, version: carEngine };
+  }, [km, year, carEngine, needsEngine]);
 
   const valuation = useMemo(() => (target ? estimate(target, kept) : null), [target, kept]);
+
+  // Vendre : il faut l'année et le kilométrage pour situer la voiture.
+  const selling = useMemo(() => {
+    if (!target || target.km === null || target.year === null) return null;
+    const gone = (data?.gone ?? []).filter((ad) => gearbox === ALL || ad.gearbox === gearbox);
+    return sellingAdvice(target, kept, gone);
+  }, [target, kept, data, gearbox]);
 
   async function refresh() {
     setRefreshing(true);
@@ -320,6 +353,18 @@ export default function EstimationPage({ params }: { params: Promise<{ id: strin
           </section>
 
           <section className="mt-3 rounded-2xl border border-ink-line bg-ink-soft p-4">
+            <h2 className="mb-2 text-[15px] font-medium text-zinc-100">
+              Évolution de la cote <span className="text-zinc-500">· {historyVersion}</span>
+            </h2>
+            <CoteHistory snapshots={data.history ?? []} version={historyVersion} />
+            {(version === ALL || version === UNKNOWN) && (
+              <p className="mt-1 text-[11px] text-zinc-600">
+                La motorisation la plus courante ; choisis-en une autre dans le filtre au-dessus.
+              </p>
+            )}
+          </section>
+
+          <section className="mt-3 rounded-2xl border border-ink-line bg-ink-soft p-4">
             <h2 className="text-[15px] font-medium text-zinc-100">Ta voiture</h2>
             <p className="mb-3 text-[11px] text-zinc-500">
               Sa valeur d’après les annonces qui lui ressemblent le plus
@@ -346,6 +391,26 @@ export default function EstimationPage({ params }: { params: Promise<{ id: strin
               />
             </div>
 
+            {(version === ALL || version === UNKNOWN) && engines.length > 1 && (
+              <select
+                value={carVersion}
+                onChange={(event) => setCarVersion(event.target.value)}
+                className="mt-3 w-full rounded-xl border border-ink-line bg-ink px-3 py-2.5 text-[15px] text-zinc-100 focus:border-accent focus:outline-none"
+              >
+                <option value="">Motorisation de ta voiture…</option>
+                {engines.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+            )}
+            {needsEngine && (km || year) && (
+              <p className="mt-3 text-[12px] text-zinc-500">
+                Choisis la motorisation : chaque moteur a son propre marché.
+              </p>
+            )}
+
             {target &&
               (valuation ? (
                 <div className="mt-4">
@@ -367,6 +432,8 @@ export default function EstimationPage({ params }: { params: Promise<{ id: strin
                       <AdRow key={ad.lbcId} ad={ad} />
                     ))}
                   </ul>
+
+                  {selling && <SellingBlock advice={selling} />}
                 </div>
               ) : (
                 <p className="mt-3 text-[12px] text-zinc-500">
@@ -387,6 +454,7 @@ export default function EstimationPage({ params }: { params: Promise<{ id: strin
                   <AdRow
                     key={deal.lbcId}
                     ad={deal}
+                    signals={data.signals?.[deal.lbcId]}
                     note={`${Math.round(deal.ratio * 100)} % sous ${formatPrice(deal.reference)}`}
                     action={<NegotiateButton lbcId={deal.lbcId} />}
                   />
@@ -445,7 +513,17 @@ function formatKm(raw: string): string {
   return digits ? Number(digits).toLocaleString('fr-FR') : '';
 }
 
-function AdRow({ ad, note, action }: { ad: Ad; note?: string; action?: React.ReactNode }) {
+function AdRow({
+  ad,
+  note,
+  action,
+  signals,
+}: {
+  ad: Ad;
+  note?: string;
+  action?: React.ReactNode;
+  signals?: Signal[];
+}) {
   return (
     <li className="flex items-center gap-3">
       <a
@@ -467,6 +545,7 @@ function AdRow({ ad, note, action }: { ad: Ad; note?: string; action?: React.Rea
               .filter(Boolean)
               .join(' · ')}
           </div>
+          <SignalBadges signals={signals} />
         </div>
         <div className="shrink-0 text-right">
           <div className="text-[13px] font-medium text-white">{formatPrice(ad.price)}</div>
@@ -475,5 +554,48 @@ function AdRow({ ad, note, action }: { ad: Ad; note?: string; action?: React.Rea
       </a>
       {action && <div className="shrink-0">{action}</div>}
     </li>
+  );
+}
+
+const TIER_LABEL = { fast: 'Vendre vite', market: 'Au prix du marché', patient: 'En patientant' } as const;
+
+/**
+ * « Pour la vendre » : trois prix d'annonce et le temps observé à chacun.
+ * Le temps dit sur quoi il repose — annonces parties, ou encore en ligne.
+ */
+function SellingBlock({ advice }: { advice: NonNullable<ReturnType<typeof sellingAdvice>> }) {
+  const basedOnLive = advice.tiers.some((tier) => tier.basis === 'live');
+  return (
+    <div className="mt-4 border-t border-ink-line pt-3">
+      <h3 className="text-[14px] font-medium text-zinc-100">Pour la vendre</h3>
+      <div className="mt-2 grid grid-cols-3 gap-2">
+        {advice.tiers.map((tier) => (
+          <div
+            key={tier.tier}
+            className={`rounded-xl border px-2.5 py-2 ${tier.tier === 'market' ? 'border-accent/60 bg-accent/10' : 'border-ink-line bg-ink'}`}
+          >
+            <div className="text-[10px] text-zinc-500">{TIER_LABEL[tier.tier]}</div>
+            <div className={`text-[15px] font-semibold ${tier.tier === 'market' ? 'text-accent' : 'text-white'}`}>
+              {formatPrice(tier.price)}
+            </div>
+            <div className="text-[10px] text-zinc-500">
+              {tier.days === null
+                ? 'durée inconnue'
+                : tier.basis === 'gone'
+                  ? `parties en ~${tier.days} j`
+                  : `en ligne depuis ~${tier.days} j`}
+            </div>
+          </div>
+        ))}
+      </div>
+      <p className="mt-2 text-[11px] leading-relaxed text-zinc-600">
+        {advice.goneObserved
+          ? `${advice.goneObserved} annonce${advice.goneObserved > 1 ? 's' : ''} de cette motorisation parties ces derniers mois. `
+          : 'Aucune annonce de cette motorisation partie depuis le début du suivi. '}
+        {basedOnLive
+          ? 'Faute d’assez de départs, certaines durées sont l’âge des annonces encore en ligne à ce niveau de prix : un minimum, pas une promesse.'
+          : 'Une annonce partie n’est pas forcément vendue, mais c’est le meilleur repère qu’offrent les annonces.'}
+      </p>
+    </div>
   );
 }

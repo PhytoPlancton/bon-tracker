@@ -13,7 +13,8 @@
  * Séparateur « ; » et marque d'ordre des octets : un tableur français ouvre le
  * fichier tel quel, et les outils d'analyse le lisent sans réglage.
  */
-import { engineOf, estimate, harmonize, plausible, quantile, type Ad } from './estimation';
+import { engineOf, estimate, plausible, quantile, screen, SUSPICIOUS_FLAG, type Ad } from './estimation';
+import { signalsFor, type GoneAd } from './signals';
 import type { MarketAd, MarketQuery } from './types';
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -42,9 +43,9 @@ export function exportFilename(query: Pick<MarketQuery, 'brand' | 'model' | 'yea
 // Annonces
 // ---------------------------------------------------------------------------
 
-export function adsCsv(docs: MarketAd[], now = new Date()): string {
+export function adsCsv(docs: MarketAd[], now = new Date(), gone: GoneAd[] = []): string {
   const raw = docs.map(toExportAd);
-  const ads = harmonize(raw);
+  const ads = screen(raw);
   const { kept } = plausible(ads);
   const keptIds = new Set(kept.map((ad) => ad.lbcId));
   const byId = new Map(docs.map((doc) => [doc.lbcId, doc]));
@@ -130,7 +131,18 @@ export function adsCsv(docs: MarketAd[], now = new Date()): string {
         : null,
       ecart_vs_comparables_pct: gap !== null ? round1(gap * 100) : null,
       affaire:
-        gap !== null && peers?.tolerance.sameVersion && !ad.flags?.length && gap <= -DEAL_RATIO ? 'oui' : 'non',
+        gap !== null && peers?.tolerance.sameVersion && gap <= -DEAL_RATIO && !ad.flags?.length
+          ? 'oui'
+          : gap !== null && peers?.tolerance.sameVersion && gap <= -DEAL_RATIO && ad.flags?.join() === SUSPICIOUS_FLAG
+            ? 'oui, prix suspect'
+            : 'non',
+      signaux:
+        signalsFor(
+          { ...ad, description: doc.description ?? null, firstSeenAt: doc.firstSeenAt },
+          { median: peers?.median ?? null, gone, live: ads, now },
+        )
+          .map((signal) => `${signal.level === 'positive' ? '+' : '!'} ${signal.label} : ${signal.detail}`)
+          .join(' | ') || null,
       photo: doc.imageUrl ?? null,
     };
 
@@ -152,7 +164,7 @@ export function adsCsv(docs: MarketAd[], now = new Date()): string {
 // ---------------------------------------------------------------------------
 
 export function summaryCsv(docs: MarketAd[], now = new Date()): string {
-  const ads = harmonize(docs.map(toExportAd));
+  const ads = screen(docs.map(toExportAd));
   const { kept } = plausible(ads);
   const risky = ads.filter((ad) => ad.flags?.length);
   const engine = (ad: Ad) => ad.version ?? 'Non précisée';

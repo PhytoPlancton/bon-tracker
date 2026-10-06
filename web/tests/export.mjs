@@ -94,8 +94,10 @@ try {
   check('km par an', Number(row?.km_par_an) > 0, row?.km_par_an);
 
   const deal = records.find((record) => record.id_annonce === '3300000001');
-  check('l’affaire repérée', deal?.affaire === 'oui' && Number(deal.ecart_vs_comparables_pct) < -15 && deal.statut === 'retenue', deal);
-  check('les plus sous le marché en tête', records[0].affaire === 'oui', records.slice(0, 3).map((record) => record.ecart_vs_comparables_pct));
+  // À −46 %, l'affaire est aussi un prix suspect : signalée comme telle,
+  // mise à part des comparables, mais toujours désignée.
+  check('l’affaire repérée, avec sa mise en garde', deal?.affaire === 'oui, prix suspect' && Number(deal.ecart_vs_comparables_pct) < -15 && deal.statut === 'à risque : Prix anormalement bas' && /Prix anormalement bas/.test(deal.signaux), deal);
+  check('les plus sous le marché en tête', records[0].affaire.startsWith('oui'), records.slice(0, 3).map((record) => record.ecart_vs_comparables_pct));
   const risky = records.find((record) => record.id_annonce === '3800000002');
   check('volant à droite : exporté, signalé, jamais « affaire »', risky?.statut === 'à risque : Volant à droite' && risky.affaire === 'non', risky);
   const excluded = records.find((record) => record.id_annonce === '3800000003');
@@ -106,7 +108,8 @@ try {
   const summary = parse(Buffer.from(await summaryResponse.arrayBuffer()).subarray(3).toString('utf8')).records;
   check('nom de fichier de synthèse', /-synthese-/.test(summaryResponse.headers.get('content-disposition') ?? ''), summaryResponse.headers.get('content-disposition'));
   const all = summary.find((record) => record.motorisation === 'Toutes');
-  check('ligne d’ensemble, hors annonces écartées', all && Number(all.annonces_retenues) === market().length + 1 && all.annonces_a_risque === '1', all);
+  // Retenues : le marché, plus l'annonce détaillée, moins l'affaire au prix suspect.
+  check('ligne d’ensemble, hors annonces écartées', all && Number(all.annonces_retenues) === market().length && all.annonces_a_risque === '2', all);
   const s32 = summary.find((record) => record.motorisation === 'Boxster 3.2 S' && record.boite === 'Toutes');
   const s27 = summary.find((record) => record.motorisation === 'Boxster 2.7' && record.boite === 'Toutes');
   check('une ligne par motorisation', s32 && s27, summary.map((record) => `${record.motorisation}/${record.boite}`));

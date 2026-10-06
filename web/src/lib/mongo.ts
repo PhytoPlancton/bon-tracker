@@ -6,6 +6,7 @@ import type {
   Listing,
   MarketAd,
   MarketQuery,
+  MarketSnapshot,
   Negotiation,
   PricePoint,
   PushSubscriptionRecord,
@@ -92,6 +93,8 @@ async function ensureIndexes(db: Db): Promise<void> {
     ['negotiations', 'negotiations', { id: 1 }, { unique: true }],
     ['negotiations', 'negotiations', { uid: 1, createdAt: -1 }, {}],
     ['negotiations', 'negotiations', { queryId: 1 }, {}],
+    ['market_snapshots', 'market_snapshots', { key: 1, day: 1 }, { unique: true }],
+    ['market_ads', 'market_ads', { modelCode: 1, goneAt: 1 }, {}],
     // L'immobilier vit à part : ses collectes et ses biens ne croisent jamais
     // ceux des voitures.
     ['immo_ads', 'immo_ads', { lbcId: 1 }, { unique: true }],
@@ -140,6 +143,7 @@ export async function collections() {
     alerts: db.collection<Alert>('alerts') as Collection<Alert>,
     pushSubscriptions: db.collection<PushSubscriptionRecord>('push_subscriptions') as Collection<PushSubscriptionRecord>,
     negotiations: db.collection<Negotiation>('negotiations') as Collection<Negotiation>,
+    marketSnapshots: db.collection<MarketSnapshot>('market_snapshots') as Collection<MarketSnapshot>,
     immoAds: db.collection<ImmoAd>('immo_ads') as Collection<ImmoAd>,
     immoQueries: db.collection<ImmoQuery>('immo_queries') as Collection<ImmoQuery>,
   };

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { collections } from './mongo';
-import { estimate, harmonize, plausible, type Ad } from './estimation';
+import { estimate, plausible, screen, suspects, SUSPICIOUS_FLAG, type Ad } from './estimation';
 import { loadAds } from './market-store';
 import { sendToUser } from './push';
 import type { Alert, MarketQuery, Watch } from './types';
@@ -126,7 +126,9 @@ export function dealsFor(
   const pool = plausible(ads).kept;
   const deals: Deal[] = [];
 
-  for (const ad of pool) {
+  // Les prix suspects ne servent de comparable à personne, mais restent
+  // signalés : l'alerte dira de vérifier.
+  for (const ad of [...pool, ...suspects(ads)]) {
     // Sans moteur, année ni kilométrage, il n'y a pas de comparables honnêtes.
     if (!ad.version || ad.km === null || ad.year === null) continue;
     if (watch.version && ad.version !== watch.version) continue;
@@ -153,7 +155,7 @@ export async function evaluateWatch(watch: Watch, { initial = false } = {}): Pro
   const query = await marketQueries.findOne({ id: watch.queryId }, { projection: { adIds: 1 } });
   if (!query) return 0;
 
-  const ads = harmonize(await loadAds(query.adIds));
+  const ads = screen(await loadAds(query.adIds));
   const deals = dealsFor(watch, ads);
   const existing = new Map(
     (await alerts.find({ watchId: watch.id, lbcId: { $in: deals.map((deal) => deal.ad.lbcId) } }).toArray()).map(
@@ -177,6 +179,7 @@ export async function evaluateWatch(watch: Watch, { initial = false } = {}): Pro
       km: deal.ad.km,
       year: deal.ad.year,
       version: deal.ad.version,
+      suspicious: deal.ad.flags?.includes(SUSPICIOUS_FLAG) ?? false,
     };
 
     if (!previous) {
@@ -226,7 +229,7 @@ async function announce(watch: Watch, fresh: Alert[]): Promise<void> {
       .join(' · ');
     await sendToUser(watch.uid, {
       title: `${Math.round(alert.ratio * 100)} % sous le marché · ${alert.price.toLocaleString('fr-FR')} €`,
-      body: `${alert.title}\n${details}\nComparables autour de ${alert.reference.toLocaleString('fr-FR')} €`,
+      body: `${alert.suspicious ? 'Prix anormalement bas : à vérifier avant tout.\n' : ''}${alert.title}\n${details}\nComparables autour de ${alert.reference.toLocaleString('fr-FR')} €`,
       url: `/alertes?ouvrir=${alert.id}`,
       tag: `alerte-${alert.lbcId}`,
       image: alert.imageUrl,
