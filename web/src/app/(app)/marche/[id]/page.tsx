@@ -61,6 +61,27 @@ export default function EstimationPage({ params }: { params: Promise<{ id: strin
   const [stopping, setStopping] = useState(false);
   const [colorBy, setColorBy] = useState<ColorBy>('version');
 
+  // La boîte choisie est retenue pour ce modèle : qui écarte les
+  // automatiques n'a pas à le refaire à chaque visite.
+  const gearboxKey = `bon-tracker:boite:${id}`;
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(gearboxKey);
+      if (saved) setGearbox(saved);
+    } catch {
+      // Stockage indisponible (navigation privée) : on repart de « Toutes ».
+    }
+  }, [gearboxKey]);
+  function chooseGearbox(value: string) {
+    setGearbox(value);
+    try {
+      if (value === ALL) localStorage.removeItem(gearboxKey);
+      else localStorage.setItem(gearboxKey, value);
+    } catch {
+      // Sans stockage, le choix vaut pour cette visite seulement.
+    }
+  }
+
   const status = data?.estimation.status;
   const collecting = status === 'queued' || status === 'running';
 
@@ -266,21 +287,27 @@ export default function EstimationPage({ params }: { params: Promise<{ id: strin
             </label>
 
             {gearboxes.length > 1 && (
-              <label className="mt-2 block">
-                <span className="sr-only">Boîte</span>
-                <select
-                  value={gearbox}
-                  onChange={(event) => setGearbox(event.target.value)}
-                  className="w-full rounded-xl border border-ink-line bg-ink px-3 py-2.5 text-[14px] text-zinc-100 focus:border-accent focus:outline-none"
-                >
-                  <option value={ALL}>Toutes boîtes</option>
-                  {gearboxes.map(([name, count]) => (
-                    <option key={name} value={name}>
-                      {name} ({count})
-                    </option>
-                  ))}
-                </select>
-              </label>
+              // Boutons plutôt que liste : écarter les automatiques doit se voir
+              // et se faire d'un geste. Le choix vaut pour le graphique comme
+              // pour tous les chiffres de la page.
+              <div role="radiogroup" aria-label="Boîte" className="mt-2 flex gap-1.5">
+                {[[ALL, `Toutes (${allKept.length})`] as const, ...gearboxes.map(([name, count]) => [name, `${name === 'Automatique' ? 'Auto' : name} (${count})`] as const)].map(
+                  ([value, label]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      role="radio"
+                      aria-checked={gearbox === value}
+                      onClick={() => chooseGearbox(value)}
+                      className={`flex-1 rounded-xl border px-2 py-2 text-[13px] ${
+                        gearbox === value ? 'border-accent bg-accent/15 text-zinc-100' : 'border-ink-line bg-ink text-zinc-400'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ),
+                )}
+              </div>
             )}
 
             {analysis ? (
